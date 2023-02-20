@@ -10,6 +10,18 @@
 */
 
 /**
+ * @struct workerthread_t
+ * @brief generico thread worker che appartiene alla pool
+ * 
+ * @var wid: pthread_t id del worker
+ * @var wpoolIndex: indice del thread nella threadpool
+ */
+typedef struct workerthread_t{
+    pthread_t wid;
+    int wpoolIndex;
+}workerthread_t;
+
+/**
  * @struct workertask_t
  * @brief task che devono eseguire i thread worker
  * 
@@ -28,7 +40,7 @@ typedef struct workertask_t{
 typedef struct workerpool_t{
     pthread_mutex_t lock;                   //mutext nell'accesso al'oggetto
     pthread_cond_t  cond;                   //usata per notificare un worker
-    pthread_t*      workers;                //array di worker id
+    workerthread_t*      workers;                //array di worker id
     int             numWorkers;             //size dell'array workers
     workertask_t*   pendingQueue;           //coda interna usata per le task pendenti
     int             queueSize;              //massima size della coda, se settata a -1 non ccetta task pendenti
@@ -36,8 +48,8 @@ typedef struct workerpool_t{
     int             queueHead;              //testa della coda
     int             queueTail;              //fine della coda
     int             pendingQueueCount;      //quantità di task pendenti presenti
-    bool            exiting;                //segnala se viene iniziato o meno il protocollo di uscita
-    bool            waitEndingTask          //true quando si vuole aspettare che non ci siano più lavori in coda
+    bool            exiting;                //true segnala se viene iniziato il protocollo di uscita
+    bool            waitEndingTask;         //true quando si vuole aspettare che non ci siano più lavori in coda
 }workerpool_t;
 
 //FUNZIONI DI GESTIONE DELLA THREADPOOL DI WORKER
@@ -64,7 +76,7 @@ workerpool_t* createWorkerpool (int numWorkers, int pendingSize);
 bool destroyWorkerpool (workerpool_t* wpool, bool forcedExit);
 
 /**
- * @funcrion addToWorkerPool
+ * @function addToWorkerPool
  * @brief aggiunge una task al wpool, se ci sono thread liberi o se la coda dei pendenti non è piena, altrimenti fallisce
  * 
  * @param wpool oggetto workerpool
