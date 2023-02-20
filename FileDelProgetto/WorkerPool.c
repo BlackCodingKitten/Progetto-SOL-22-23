@@ -11,15 +11,73 @@
 #include <assert.h>
 #include <WorkerPool.h> 
 #include <stdbool.h>
+#include <stdarg.h>
 
 
 /**
- * @brief 
+ * @function: wpoolWorker
+ * @brief funzione eseguita dal workerche appartiene a wpool
  * 
- * @param wpool workerpool_t
+ * @param pool workerpool_t
  */
-static void * wpoolWorker(void*wpool){
+static void * wpoolWorker(void* pool){
+    //cast della void*pool in una workerpool
+    workerpool_t * wpool =(workerpool_t*)pool;
+    //task generica
+    workertask_t task;
+    workerthread_t self;
+    self.wid=pthread_self();
+    self.wpoolIndex=0;
+    while(!pthread_equal(wpool->workers[self.wpoolIndex].wid,self.wid)){
+        self.wpoolIndex++;
+    }
+    //acquisisco la lock
+    if(pthread_mutex_lock(&(wpool->lock))!=0){
+        fprintf(stderr, "-36-pthread_mutex_lock(&(wpool->lock)): errore\n");
+        return NULL;
+    }
+    while(true){
+        while((wpool->pendingQueueCount==0)&&(!wpool->exiting)){
+            pthread_cond_wait(&(wpool->cond), &(wpool->lock));
+        }
+        
+        if(wpool->exiting && !wpool->waitEndingTask){
+            //esco ignorando le task pendenti
+            break;
+        }
+        if(wpool->exiting && wpool->waitEndingTask){
+            //esco ma ci sono task pendenti da terminare
+            break;
+        }
+        //nuovo task
+        task.funPtr=wpool->pendingQueue[wpool->queueHead].funPtr;
+        task.arg=wpool->pendingQueue[wpool->queueHead].arg;
 
+        wpool->queueHead++;
+        wpool->pendingQueueCount--;
+        if(wpool->queueHead==abs(wpool->queueSize)){
+            wpool->queueHead=0;
+        }
+        wpool->activeTask++;
+        if(pthread_mutex_unlock(&(wpool->lock))!=0){
+            fprintf(stderr, "-63-pthread_mutex_unlock(&(wpool->lock)):errore\n");
+            return NULL;
+        }
+        //eseguo la task
+        (*(task.funPtr))(task.arg);
+        //acquisisco la lock per decrementare le activeTask
+        if(pthread_mutex_lock(&(wpool->lock))!=0){
+            fprintf(stderr, "-70-pthread_mutex_lock(&(wpool->lock)): errore\n");
+            return NULL;
+        }
+        wpool->activeTask--;
+    }    
+    if(pthread_mutex_unlock(&(wpool->lock))!=0){
+        fprintf(stderr, "-76-pthread_mutex_unlock(&(wpool->lock)):errore\n");
+        return NULL; 
+    }
+    fprintf(stderr, "Worker %d in uscita.\n", self.wpoolIndex);
+    return NULL;
 }
 
 
@@ -95,6 +153,7 @@ workerpool_t * createWorkerpool (int numWorkers, int pendingSize){
         }
         //se la pthread_create() va a buon fine incremento numWorkers;
         wpool->numWorkers++;
+        wpool->workers[i].wpoolIndex=i;
     }
     return wpool;
 }
@@ -197,4 +256,72 @@ static void* dThreadTask(void*arg){
     //esegue la funzione
     (*(f->funPtr))(f->arg);
     free(f);
+}
+
+int addToWorkerpool (workerpool_t* wpool, void(*task)(void*), void*arg){
+    //controllo che la task non sia NULL e che la wpool non sia NULL
+    if(wpool==NULL || task==NULL){
+        //setto errno
+        errno=EINVAL;
+        return -1;
+    }
+
+    //acquisico la lock
+    if(pthread_mutex_lock(&(wpool->lock))!=0){
+        fprintf(stderr, "pthread_mutex_lock(&(wpool->lock)): errore");
+        return -1;
+    }
+
+    int qSize=abs(wpool->queueSize);
+    //bool : dobbiamo gestire le task pendenti?
+    bool noPending = (wpool->pendingQueue)==-1;
+
+    //controllo se la coda è piena o se si è in fase di uscita:
+    if(wpool->pendingQueueCount >= qSize || wpool->exiting){
+        //unlock
+        if(pthread_mutex_unlock(&(wpool->lock))!=0){
+            fprintf(stderr, "-222-pthread_mutex_unlock(&(wpool->lock)): errore");
+            return -1;
+        }
+        //uscita col valore che indica queue piena
+        return 1;
+    }
+    //se le task attive sono maggiori/uguali del numero di workers ritorno queue piena
+    if(wpool->activeTask >= wpool->numWorkers){
+        if(noPending){
+            //le task pendenti non vengono gestite perchè i workers sono tutti occupati
+            assert(wpool->pendingQueueCount == 0);
+            if(pthread_mutex_unlock(&(wpool->lock))!=0){
+                fprintf(stderr, "-233-pthread_mutex_unlock(&(wpool->lock)): errore");
+                return -1;
+            }
+            return 1;
+        }
+    }
+    //inserico in coda la nuova task
+    wpool->pendingQueue[wpool->queueTail].funPtr=task;
+    wpool->pendingQueue[wpool->queueTail].arg=arg;
+    wpool->activeTask++;
+    wpool->queueTail++;
+    if(wpool->queueTail >= qSize){
+        wpool->queueTail=0;
+    }
+    int err;
+    if((err=pthread_cond_signal(&(wpool->cond)))!=0){
+        //setto errno
+        errno=err;
+        //rilascio la lock
+        if(pthread_mutex_unlock(&(wpool->lock))!=0){
+            fprintf(stderr,"-251-pthread_mutex_unlock(&(wpool->lock)): errore\n");
+        }
+        //ritorno -1 in ogni caso
+        return -1;
+    }
+
+    //se ho aggiunto correttamente il thread rilascio la lock e return 0
+    if(pthread_unlock_mutex(&(wpool->lock))!=0){
+        fprintf(stderr, "-259-pthread_mutex_unlock(&(wpool->lock)): errore\n");
+        return -1;
+    }
+    return 0;
 }
