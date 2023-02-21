@@ -8,11 +8,20 @@
 #include <pthread.h>
 #include <unistd.h>
 #include <errno.h>
+#include <string.h>
+#include <ctype.h>
 #include <assert.h>
 #include <WorkerPool.h> 
 #include <stdbool.h>
-#include <stdarg.h>
+#include <sys/socket.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <sys/un.h>
 
+//il LONG_MAX=9,223,372,036,854,775,807 che sono 19 cifre + \0 = 20
+#define BUFFERSIZE 20
+#define SOCKET_NAME "./farm.sck"
+#define UNIX_PATH_MAX 108
 
 /**
  * @function: wpoolWorker
@@ -324,4 +333,57 @@ int addToWorkerpool (workerpool_t* wpool, void(*task)(void*), void*arg){
         return -1;
     }
     return 0;
+}
+
+void leggieSomma (void*arg){
+    //creo la connessione tra il thread e il Collector
+    struct sockaddr_un addr;
+    strncpy(addr.sun_path,SOCKET_NAME,UNIX_PATH_MAX);
+    addr.sun_family=AF_UNIX;
+    int sock =socket(AF_UNIX,SOCK_STREAM,0);
+    if(sock==-1){
+        perror("socket()");
+        exit(EXIT_FAILURE);
+    }
+    string filePath = *(string*)arg;
+    long somma = 0;
+    int i=0; 
+    int fileDim=0;
+    string buffer=malloc(sizeof(char)*BUFFERSIZE);
+
+    FILE*tmp=fopen(filePath,'rb');
+    if(tmp==NULL){
+        perror("fopen()");
+        fprintf(stderr, "error on %s",filePath);
+        //----------------------------------------------------------
+    }
+    //ricavo la dimensione dell'array di valori
+    while(fread(buffer,sizeof(long),1,tmp)>0){
+        fileDim++;
+    }
+    long value[fileDim];
+    memset(buffer,'\0',BUFFERSIZE);
+    fclose(tmp);
+    FILE * filePtr=fopen(filePath, "rb");
+    if(filePtr==NULL){
+        perror("fopen()");
+        fprintf(stderr, "error on %s",filePath);
+        //---------------------------------------------------------
+    }
+    while(fread(buffer,sizeof(long),1,filePtr)>0){
+        string e=0;
+        long v=strtol(buffer,&e,0);
+        if(e==(char)0 && e!=NULL){
+            value[i]=i*v;
+        }
+        i++;
+        memset(buffer,'\0',BUFFERSIZE);        
+    }
+    fclose(filePtr);
+    for(i=0; i<fileDim; i++){
+        somma=somma+value[i];
+    }
+    //somma è da spedire al Collector con la write 
+    //---------------------------------
+
 }

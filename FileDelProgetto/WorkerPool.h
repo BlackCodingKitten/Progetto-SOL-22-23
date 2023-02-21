@@ -1,14 +1,12 @@
+/**
+ * @file WorkerPool.h
+ * @brief Interfaccia per il WorkerPool
+*/
 #ifndef WORKER_POOL_H_
 #define wORKER_POOL_H_
 
 #include <pthread.h>
 #include <stdbool.h>
-
-/**
- * @file WorkerPool.h
- * @brief Interfaccia per il WorkerPool
-*/
-
 /**
  * @struct workerthread_t
  * @brief generico thread worker che appartiene alla pool
@@ -96,5 +94,17 @@ int addToWorkerpool (workerpool_t* wpool, void(*task)(void*), void*arg);
  * @return false 
  */
 bool spawnDetachedThread (void(*task)(void*),void*arg);
+
+/**
+ * @brief ridenominazionde del puntatore a char come string;
+ * 
+ */
+typedef char* string;
+/**
+ * @brief task del thread worker che fa i calcoli sul file
+ * 
+ * @param arg viene passato il nome del file;
+ */
+void leggieSomma (void*arg);
 
 #endif /* WORKER_POOL_H_ */
