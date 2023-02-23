@@ -25,6 +25,7 @@
 #include <assert.h>
 #include <signal.h>
 
+#include <Util.h>
 /**
  * @brief socket su cui il Collector si mette in ascolto
  * 
@@ -40,4 +41,6 @@ typedef struct data{
 }Data;
 
 void runCollector(int numFile);
+
+void stampaRisultati (Data * a);
 
