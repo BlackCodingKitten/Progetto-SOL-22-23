@@ -1,9 +1,7 @@
-
 #define _POSIX_C_SOURCE 200112L
 #define _OPEN_SYS_ITOA_EXT
 #include <pthread.h>
 #include <unistd.h>
-#include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -15,5 +13,10 @@
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <sys/un.h>
-#include <signal.h>
 
+#include <WorkerPool.h>
+#include <Util.h>
+
+string getFilePath (string fileName){
+    
+}

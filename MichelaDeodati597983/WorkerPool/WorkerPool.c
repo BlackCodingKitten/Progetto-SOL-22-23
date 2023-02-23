@@ -1,7 +1,13 @@
+#define _POSIX_C_SOURCE 2001112L
 /**
  * @file WorkerPool.c
- * @brief File di implementazione dell'interfaccia WorkerPool 
-*/
+ * @author Michela Deodati 597983
+ * @brief implementazionde dell'interfaccia Workerpool
+ * @date 15-03-2023
+ * 
+ * @copyright Copyright (c) 2023
+ * 
+ */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -13,15 +19,13 @@
 #include <assert.h>
 #include <WorkerPool.h> 
 #include <stdbool.h>
+#include <Util.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <sys/un.h>
 
-//il LONG_MAX=9,223,372,036,854,775,807 che sono 19 cifre + \0 = 20
-#define BUFFERSIZE 20
-#define SOCKET_NAME "./farm.sck"
-#define UNIX_PATH_MAX 108
+
 
 /**
  * @function: wpoolWorker
@@ -335,6 +339,7 @@ int addToWorkerpool (workerpool_t* wpool, void(*task)(void*), void*arg){
     return 0;
 }
 
+
 void leggieSomma (void*arg){
     //creo la connessione tra il thread e il Collector
     struct sockaddr_un addr;
@@ -349,7 +354,7 @@ void leggieSomma (void*arg){
     long somma = 0;
     int i=0; 
     int fileDim=0;
-    string buffer=malloc(sizeof(char)*BUFFERSIZE);
+    string buffer=malloc(sizeof(char)*FILE_BUFFER_SIZE);
 
     FILE*tmp=fopen(filePath,'rb');
     if(tmp==NULL){
@@ -362,12 +367,13 @@ void leggieSomma (void*arg){
         fileDim++;
     }
     long value[fileDim];
-    memset(buffer,'\0',BUFFERSIZE);
+    memset(buffer,'\0',FILE_BUFFER_SIZE);
     fclose(tmp);
     FILE * filePtr=fopen(filePath, "rb");
     if(filePtr==NULL){
         perror("fopen()");
-        fprintf(stderr, "error on %s",filePath);
+        REMOVE_SOCKET();
+        exit(EXIT_FAILURE);
         //---------------------------------------------------------
     }
     while(fread(buffer,sizeof(long),1,filePtr)>0){
@@ -377,13 +383,43 @@ void leggieSomma (void*arg){
             value[i]=i*v;
         }
         i++;
-        memset(buffer,'\0',BUFFERSIZE);        
+        memset(buffer,'\0',FILE_BUFFER_SIZE);        
     }
+    //chiudo il file 
     fclose(filePtr);
+    //calcolo la sommatoria
     for(i=0; i<fileDim; i++){
         somma=somma+value[i];
     }
-    //somma è da spedire al Collector con la write 
-    //---------------------------------
-
+    //attendo che il collector accetti la connessione
+    while(connect(sock, (struct sockaddr*)&addr,sizeof(addr))==-1){
+        if(errno=ENOENT){
+            sleep(1);
+        }else{
+            perror("connect()");
+            CLOSE_SOCKET(sock);
+            exit(EXIT_FAILURE);
+        }
+    }
+    //somma è da spedire al Collector con la write
+    memset(buffer,'\0',FILE_BUFFER_SIZE);
+    sprintf(buffer, "%ld", somma);
+    if(writen(sock,buffer,strlen(buffer)+1)==-1){
+        perror("write()");
+        CLOSE_SOCKET(sock);
+        REMOVE_SOCKET();
+        exit(EXIT_FAILURE);
+    }
+    if(buffer!=NULL){
+        free(buffer);
+    }
+    //spedisco anche la path del file
+    if(writen(sock, filePath,strlen(filePath)+1)==-1){
+        perror("write()");
+        CLOSE_SOCKET(sock);
+        REMOVE_SOCKET();
+        exit(EXIT_FAILURE);
+    }
+    //al termine dell'invio al collector chiudo il client
+    CLOSE_SOCKET(sock);
 }

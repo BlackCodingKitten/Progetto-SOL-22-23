@@ -1,4 +1,13 @@
-
+#define _POSIX_C_SOURCE 2001112L
+/**
+ * @file MasterThread.c
+ * @author Michela Deodati 597983
+ * @brief implementazione dell'intefraccia MasterThread
+ * @version 0.1
+ * @date 15-03-1013
+ * 
+ * 
+ */
 #define _POSIX_C_SOURCE 200112L
 #define _OPEN_SYS_ITOA_EXT
 #include <pthread.h>
@@ -16,15 +25,4 @@
 #include <sys/types.h>
 #include <sys/un.h>
 #include <signal.h>
-
-typedef char* string;
-
-
-int main (int argc, string argv[]){
-
-    return EXIT_SUCCESS;
-}
-
-
-
 

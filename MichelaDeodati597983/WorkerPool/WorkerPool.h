@@ -1,3 +1,6 @@
+
+/** * Progetto SOL 2022-2023: Farm
+*/
 /**
  * @file WorkerPool.h
  * @brief Interfaccia per il WorkerPool
@@ -6,6 +9,7 @@
 #define wORKER_POOL_H_
 
 #include <pthread.h>
+#include <Util.h>
 #include <stdbool.h>
 /**
  * @struct workerthread_t
@@ -95,11 +99,6 @@ int addToWorkerpool (workerpool_t* wpool, void(*task)(void*), void*arg);
  */
 bool spawnDetachedThread (void(*task)(void*),void*arg);
 
-/**
- * @brief ridenominazionde del puntatore a char come string;
- * 
- */
-typedef char* string;
 /**
  * @brief task del thread worker che fa i calcoli sul file
  * 
