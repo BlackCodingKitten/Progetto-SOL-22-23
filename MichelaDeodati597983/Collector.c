@@ -64,6 +64,13 @@ void runCollector (int numFile){
             perror("read(fileValue)");
             goto _uscita_errore;
         }
+        if(strstr(buffer,"STAMPA")){
+            //se ho ricevuto il segnale di stampa 
+            i--; // nonsto leggendo un file quindi decremento il contatore
+            stampaRisultati(dataArray,numFile);
+            memset(buffer, '\0', FILE_BUFFER_SIZE);
+            continue;
+        }
         //la prima cosa che legge è il valore del calcolo quindi devo rifare la cnversione da stringa a long
         string e=NULL;
         long v = strtol(buffer,&e,0);
@@ -109,6 +116,16 @@ int compare (const void* a, const void *b){
     return strcmp(A.filePath,B.filePath);
 }
 
+void stampaRisultati (Data * a, int dim){
+    qsort(a,dim,sizeof(Data), compare);
+    for(int i=0; i<dim; i++){
+        if(a[i].fileValue==0){
+            continue;
+        }
+        fprintf(stdout, "%ld\t%s\n", a[i].fileValue,a[i].filePath);
+    }
+    
+}
 
 
 

@@ -42,5 +42,5 @@ typedef struct data{
 
 void runCollector(int numFile);
 
-void stampaRisultati (Data * a);
+void stampaRisultati (Data * a, int dim);
 
