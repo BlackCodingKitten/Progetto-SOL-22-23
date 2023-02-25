@@ -352,46 +352,24 @@ void leggieSomma (void*arg){
     }
     string filePath = *(string*)arg;
     long somma = 0;
-    int i=0; 
-    int fileDim=0;
-    string buffer=malloc(sizeof(char)*FILE_BUFFER_SIZE);
 
-    FILE*tmp=fopen(filePath,'rb');
-    if(tmp==NULL){
+    FILE*file=fopen(filePath,'rb');
+    if(file==NULL){
         perror("fopen()");
         fprintf(stderr, "error on %s",filePath);
         //----------------------------------------------------------
     }
-    //ricavo la dimensione dell'array di valori
-    while(fread(buffer,sizeof(long),1,tmp)>0){
-        fileDim++;
+    long fileDim=getFileSize(file)/ sizeof(long); //ricavo quanti numeri ci sono nel file
+    //alloco un array in cui inserisco tutti i valori
+    long* fileArray =(long*)malloc(sizeof(long)*fileDim);
+    //leggo tutti i valori del file 
+    fread(fileArray,sizeof(long),fileDim,file);
+    //sommo il prodotto del valore per l'indice
+    for(int i=0; i<fileDim; i++){
+        somma=somma+(fileArray[i]*i);
     }
-    long value[fileDim];
-    memset(buffer,'\0',FILE_BUFFER_SIZE);
-    fclose(tmp);
-    FILE * filePtr=fopen(filePath, "rb");
-    if(filePtr==NULL){
-        perror("fopen()");
-        REMOVE_SOCKET();
-        exit(EXIT_FAILURE);
-        //---------------------------------------------------------
-    }
-    while(fread(buffer,sizeof(long),1,filePtr)>0){
-        string e=0;
-        long v=strtol(buffer,&e,0);
-        if(e==(char)0 && e!=NULL){
-            value[i]=i*v;
-        }
-        i++;
-        memset(buffer,'\0',FILE_BUFFER_SIZE);        
-    }
-    //chiudo il file 
-    fclose(filePtr);
-    //calcolo la sommatoria
-    for(i=0; i<fileDim; i++){
-        somma=somma+value[i];
-    }
-    //attendo che il collector accetti la connessione
+    string buffer = malloc(sizeof(char)*FILE_BUFFER_SIZE);
+    sprintf(buffer, "%ld", somma); //converto il valore in stringa
     while(connect(sock, (struct sockaddr*)&addr,sizeof(addr))==-1){
         if(errno=ENOENT){
             sleep(1);
@@ -401,9 +379,7 @@ void leggieSomma (void*arg){
             exit(EXIT_FAILURE);
         }
     }
-    //somma è da spedire al Collector con la write
-    memset(buffer,'\0',FILE_BUFFER_SIZE);
-    sprintf(buffer, "%ld", somma);
+    //la somma è da spedire al Collector con la write
     if(writen(sock,buffer,strlen(buffer)+1)==-1){
         perror("write()");
         CLOSE_SOCKET(sock);
@@ -422,4 +398,19 @@ void leggieSomma (void*arg){
     }
     //al termine dell'invio al collector chiudo il client
     CLOSE_SOCKET(sock);
+}
+/**
+ * @brief ricavare la dimensione in byte del file 
+ * 
+ * @param file 
+ * @return long 
+ */
+long getFileSize(FILE *file) {
+    long size;
+
+    fseek(file, 0, SEEK_END);  // si posiziona alla fine del file
+    size = ftell(file);        // legge la posizione attuale nel file, che corrisponde alla sua dimensione in byte
+    fseek(file, 0, SEEK_SET);  // si riporta all'inizio del file
+
+    return size;
 }
