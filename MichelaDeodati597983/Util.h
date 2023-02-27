@@ -128,5 +128,23 @@ static inline int writen(long fileDescriptor, void*buffer, size_t bufferSize){
     return 1;
 }
 
+/**
+ * @brief controlla che la tringa passata sia un numero valido altrimenti ritorna -1
+ * 
+ */
+static inline int StringToNumber (const string s){
+    if(s==NULL){
+        return -1;
+    }
+    if(strlen(s)==0){
+        return -1;
+    }
+    string e=NULL;
+    int val =(int)strtol(s,&e,0);
+    if(e!=NULL && e==(char)0){
+        return val; //successo
+    }
+    return -1; //fallimento
+}
 #endif /*_UTIL_H*/
 
