@@ -17,18 +17,26 @@
 #include <WorkerPool.h>
 #include <Util.h>
 
+#define NTHREAD_DEFAULT 4
+#define QUEUE_SIZE_DEFAULT 8
+#define DELAY_DEFAULT 0
+
+
 typedef struct sighandler_t{
     sigset_t * set;         //set dei segnali da gestire
     int signalPipe;          //descrittore di una pipe senza nome 
 }sighandler_t;
 
 static void* sigHandlerTask (void*arg);
+int isFile(const string filePath);
 
-bool isRegularFile(string path);
 
-bool checkNthread(const int nthread);
-bool checkqSize (const int qsize);
-bool checkDelay (const int time);
+
+
+
+int checkNthread(const int nthread);
+int checkqSize (const int qsize);
+int checkDelay (const int time);
 bool isDirectory (const string dir);
 
 void runMasterThread(int argc,string argv[]);

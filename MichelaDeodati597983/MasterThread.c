@@ -27,6 +27,15 @@
 #include <signal.h>
 
 #include <MasterThread.h>
+#include <Util.h>
+
+int isFile(const string filePath){
+    struct stat path_stat;
+    if(stat(filePath,&path_stat.st_mode)!=0){
+        return 0;
+    }
+    return S_ISREG(path_stat.st_mode);
+}
 
 static void* sigHandlerTask (void*arg){
     sigset_t * set = ((sighandler_t*)arg)->set;
@@ -82,3 +91,42 @@ static void* sigHandlerTask (void*arg){
 
 }
 
+void runMasterThread(int argc,string argv[]){
+    int n_nthread;
+    int q_queueLen;
+    int t_delay;
+
+    for(int i=0; i<argc; i++){
+        if(strstr(argv[i], "-n")){
+            n_nthread=checkNthread(StringToNumber(argv[i+1]));
+            ++i;
+        }
+        if(strstr(argv[i], "-q")){
+            q_queueLen=checkqSize(StringToNumber(argv[i+1]));
+            ++i;
+        }
+        if(strstr(argv[i], "-t")){
+            n_nthread=checkDelay(StringToNumber(argv[i+1]));
+            ++i;
+        }
+    }
+    //ho settato tutti i valori passati a riga di comando della threadpool
+    //ora devo cerarmi un elenco di file (ricavando le loro path)
+
+    
+}
+
+int checkNthread(const int nthread){
+    //controllo che il valore di nthread passato al main sia >0;
+    return ((nthread>0)? nthread : NTHREAD_DEFAULT);
+}
+
+int checkqSize (const int qsize){
+    //controllo che il valore della lunghezza della coda condivisa sia >0
+    return((qsize>0)? qsize:QUEUE_SIZE_DEFAULT);
+}
+
+int checkDelay (const int time){
+    //controllo che il delay specificato sia >=0
+    if((time>0)? time: DELAY_DEFAULT);
+}
