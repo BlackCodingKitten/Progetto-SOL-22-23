@@ -38,6 +38,10 @@ typedef char* string;
 #define UNIX_PATH_MAX 108
 #endif
 
+#if !defined(PATH_LEN)
+#define PATH_LEN 255
+#endif
+
 /**
  * @brief esegue il controllo dell'input passato al main 
  * @return esce se argc <1 ossia non sono stati passati argomenti al main

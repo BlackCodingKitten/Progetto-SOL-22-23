@@ -33,7 +33,7 @@ int isFile(const string filePath);
 
 
 
-
+string getProjectDirectory(void);
 int checkNthread(const int nthread);
 int checkqSize (const int qsize);
 int checkDelay (const int time);

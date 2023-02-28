@@ -37,6 +37,17 @@ int isFile(const string filePath){
     return S_ISREG(path_stat.st_mode);
 }
 
+string getProjectDirectory(void){
+    string path=malloc(sizeof(char)*PATH_LEN);
+    getcwd(path,PATH_LEN);
+    int n =  strlen(path)-strlen(strrchr(path,'/'));
+    string tmp = malloc(sizeof(char)*PATH_LEN);
+    memset(tmp,'\0', PATH_LEN);
+    strncpy(tmp,path,n);
+    free(path);
+    return tmp;
+}
+
 static void* sigHandlerTask (void*arg){
     sigset_t * set = ((sighandler_t*)arg)->set;
     int pfd = ((sighandler_t*)arg)->signalPipe;
@@ -113,6 +124,8 @@ void runMasterThread(int argc,string argv[]){
     //ho settato tutti i valori passati a riga di comando della threadpool
     //ora devo cerarmi un elenco di file (ricavando le loro path)
 
+    //ricavo prima la path da cui inizialre la ricerca dei file
+    string path= getProjectDirectory();
     
 }
 
