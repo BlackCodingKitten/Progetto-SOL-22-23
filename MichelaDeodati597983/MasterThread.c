@@ -19,6 +19,8 @@
 #include <errno.h>
 #include <stdbool.h>
 #include <sys/wait.h>
+#include <dirent.h>
+#include <sys/stat.h>
 #include <string.h>
 #include <sys/select.h>
 #include <sys/socket.h>
@@ -106,18 +108,30 @@ void runMasterThread(int argc,string argv[]){
     int n_nthread;
     int q_queueLen;
     int t_delay;
+    string d_directoryName =(string)malloc(sizeof(char)*PATH_LEN);
+
+    int totFile=argc; //parto dal considerare che tutti gli elementi passati siano file
 
     for(int i=0; i<argc; i++){
-        if(strstr(argv[i], "-n")){
+        if(strcmp(argv[i],"-n")==0){
+            totFile=totFile-2; // tolgo 2 elementi che non sono file
             n_nthread=checkNthread(StringToNumber(argv[i+1]));
             ++i;
         }
-        if(strstr(argv[i], "-q")){
+        if(strcmp(argv[i],"-q")==0){
+            totFile=totFile-2;
             q_queueLen=checkqSize(StringToNumber(argv[i+1]));
             ++i;
         }
-        if(strstr(argv[i], "-t")){
+        if(strcmp(argv[i],"-t")==0){
+            totFile=totFile-2;
             n_nthread=checkDelay(StringToNumber(argv[i+1]));
+            ++i;
+        }
+        if(strcmp(argv[i],"-d")==0){
+            totFile=totFile-2;
+            memset(d_directoryName,'\0',PATH_LEN);
+            strncpy(d_directoryName, argv[i+1],strlen(argv[i+1]));
             ++i;
         }
     }
@@ -126,6 +140,34 @@ void runMasterThread(int argc,string argv[]){
 
     //ricavo prima la path da cui inizialre la ricerca dei file
     string path= getProjectDirectory();
+
+    string * appo = malloc(sizeof(string)*100);
+    for(int i=0; i<100; i++){
+        appo[i]=NULL;//inizializzo appo
+    }
+    findFileDir(d_directoryName,appo,0);
+    int b=0;
+    while(appo[b]!=NULL){
+        ++b;
+    }
+    totFile=totFile+b; //adesso conosco il valore preciso di quanti file ci sono cioè [(argc - (opzioni+argomenti))+file nella directory]
+    taskArgument * fileArray =(taskArgument*)malloc(sizeof(taskArgument)*40);
+    int indexCounter=0;
+    for(int i=0; i<argc; i++){
+        if(strstr(argv[i],"file") && strstr(argv[i],".dat")){
+            //ricerco il file e lo salvo nell'array
+            strcpy(fileArray[i].name, argv[i]);
+            strcpy(fileArray[i].path,searchFile(path,argv[i]));
+            ++indexCounter;
+        }
+    }
+    for(int i=0; i<b; i++){
+        strcpy(fileArray[indexCounter].name, appo[i]);
+        strcpy(fileArray[indexCounter].path, realpath(appo[i],NULL));
+        free(appo[i]);
+    }
+    free(appo);
+    
     
 }
 
@@ -142,4 +184,115 @@ int checkqSize (const int qsize){
 int checkDelay (const int time){
     //controllo che il delay specificato sia >=0
     if((time>0)? time: DELAY_DEFAULT);
+}
+
+int isFile(const char* filePath){
+    struct stat path_stat;
+    if(stat(filePath,&path_stat)!=0){
+        perror("stat");
+        return 0;
+    }
+    return S_ISREG(path_stat.st_mode) && strstr(filePath,".dat");
+}
+
+char* searchFile (char* dirname, char* filename){
+    //apro la cartella chiamata dirname 
+    DIR* directory;
+    if((directory=opendir(dirname))==NULL){
+        perror("Impossibile trovare il percorso del file");
+        exit(EXIT_FAILURE);
+    }
+    //esploro la cartella 
+    struct dirent * dirptr;
+    while(errno=0, (dirptr=readdir(directory))!=NULL){
+        //escludo ./ e ../
+        if(dirptr->d_name[0]=='.'){
+            continue;
+        }
+        char* path =(char*)malloc(sizeof(char)*PATH_LEN);
+        strcpy(path,dirname);
+        strcat(path,"/");
+        strcat(path, dirptr->d_name);
+
+        struct stat infodir;
+        if(stat(path,&infodir)==-1){
+            perror(path);
+            exit(EXIT_FAILURE);
+        }
+        if(strcmp(dirptr->d_name,filename)==0){
+            return path;
+        }
+        if(S_ISDIR(infodir.st_mode)){
+            char* ret=malloc(sizeof(char)*255);
+            if((ret = searchFile(path,filename))!=NULL){
+
+                    return ret;                
+            }else{
+                free(path);
+                continue;
+            }
+        }
+    }
+    closedir(directory);
+    return NULL;
+}
+
+int findFileDir (const char* dirName, char** saveFile, int index){
+    char** dirTree=malloc(sizeof(char*)*100);
+    int treeI=0;
+    struct stat buf;
+    if(stat(dirName,&buf)==-1){
+        perror("facendo la stat");
+        fprintf(stderr, "Errore nella directory %s\n", dirName);
+        exit(EXIT_FAILURE);
+    }
+    DIR*d;
+    //fprintf(stdout, "SONO NELLA DIRECTORY: %s\n", dirName);
+
+    if((d=opendir(dirName))==NULL){
+        perror("opendir");
+        fprintf(stderr, "errore nella directory %s\n", dirName);
+        exit(EXIT_FAILURE);
+    }else{
+        struct dirent * f;
+        while ((errno=0, f=readdir(d))!=NULL){
+            struct stat buf;
+            char * filename =malloc(sizeof(char*)*PATH_LEN);
+            memset(filename,'\0',PATH_LEN);
+            strncpy(filename,dirName, PATH_LEN);
+            strncat(filename,"/", PATH_LEN);
+            strncat(filename,f->d_name,PATH_LEN);
+            if(stat(filename,&buf)==-1){
+                perror("eseguendo la stat");
+                fprintf(stderr, "erre in %s", filename);
+                exit(EXIT_FAILURE);
+            }
+            if(S_ISDIR(buf.st_mode)){
+                if(strlen(filename)>0 && (filename[strlen(filename)-1]!='.')){
+                    dirTree[treeI]=malloc(sizeof(char)*PATH_LEN);
+                    strncpy(dirTree[treeI], filename, PATH_LEN);
+                    ++treeI;
+                }
+            }else{
+                if(strstr(f->d_name,".dat")&& strstr(f->d_name,"file")){
+                    saveFile[index]=malloc(sizeof(char)*PATH_LEN);
+                    memset(saveFile[index],'\0',PATH_LEN);
+                    strncpy(saveFile[index], filename, PATH_LEN);
+                    ++index;   
+                }
+            }
+        }
+        if(errno!=0){
+            perror("readdir");
+            fprintf(stderr, "readdir della cartella %s fallito", dirName);
+            closedir(d);
+            exit(EXIT_FAILURE);
+        }
+        for(int k=0; k<treeI; k++){
+            findFileDir(dirTree[k], saveFile,index);
+            free(dirTree[k]);
+        }                 
+        free(dirTree);
+        closedir(d);
+    }
 }

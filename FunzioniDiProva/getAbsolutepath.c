@@ -7,8 +7,6 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-
-
 int is_regular_file(const char *path)
 {
     struct stat path_stat;
@@ -44,7 +42,9 @@ char *get_absolute_path(const char *filename) {
 
     snprintf(absolute_path, PATH_MAX + strlen(filename) + 2, "%s/%s", cwd, filename);
 
+
     free(cwd);
+
     if(!is_regular_file(absolute_path)){
         return "NOT REGULAR FILE";
     }

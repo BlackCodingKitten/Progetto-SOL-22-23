@@ -27,6 +27,11 @@ typedef struct sighandler_t{
     int signalPipe;          //descrittore di una pipe senza nome 
 }sighandler_t;
 
+typedef struct taskArg{
+    char name[255];     //nome del file;
+    char path[255] ;    //path completa del file;
+}taskArgument;
+
 static void* sigHandlerTask (void*arg);
 int isFile(const string filePath);
 
