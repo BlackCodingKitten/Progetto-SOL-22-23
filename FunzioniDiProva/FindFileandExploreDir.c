@@ -66,7 +66,8 @@ int main (int argc, char*argv[]){
             strcpy(array[x].filepath,searchFile(path,argv[i]));
             ++x;
         }else{
-            findFileDir(realpath(argv[i],NULL),a,0);
+            //findFileDir(realpath(argv[i],NULL),a,0);
+            findFileDir(argv[i],a,0);
             int b=0;
             while(a[b]!=NULL){
                 strcpy(array[x].filename,strchr(a[b],'/'));
@@ -80,12 +81,16 @@ int main (int argc, char*argv[]){
         }
     }
 
-
+    int k=0; 
+    while(a[k]!=NULL){
+        free(a[k]);
+    }
+    free(a);
     for(int i=0; i<x; i++){
         puts(array[i].filepath);
     }
-
-    
+    free(array);
+    free(path);
     return 0;
 }
 
@@ -181,8 +186,8 @@ int findFileDir (const char* dirName, char** saveFile, int index){
                 if(strstr(f->d_name,".dat")&& strstr(f->d_name,"file")){
                     //mi assicuro che il file sia giusto
                     //printf("FILE TROVATI: ");
-                   //puts(filename);
-                  // printf("INDEX:%d\n", index);
+                    //puts(filename);
+                    // printf("INDEX:%d\n", index);
                     saveFile[index]=malloc(sizeof(char)*255);
                     //puts("allocato saveFIle");
                     memset(saveFile[index],'\0',255);
@@ -202,7 +207,10 @@ int findFileDir (const char* dirName, char** saveFile, int index){
         }
         for(int k=0; k<treeI; k++){
             findFileDir(dirTree[k], saveFile,index);
-        }
+            free(dirTree[k]);
+        }                 
+        free(dirTree);
+        closedir(d);
     }
 
 
