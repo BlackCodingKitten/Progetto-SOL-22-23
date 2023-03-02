@@ -42,7 +42,7 @@ typedef struct workertask_t{
 typedef struct workerpool_t{
     pthread_mutex_t lock;                   //mutext nell'accesso al'oggetto
     pthread_cond_t  cond;                   //usata per notificare un worker
-    workerthread_t*      workers;                //array di worker id
+    workerthread_t*      workers;           //array di worker id
     int             numWorkers;             //size dell'array workers
     workertask_t*   pendingQueue;           //coda interna usata per le task pendenti
     int             queueSize;              //massima size della coda, se settata a -1 non ccetta task pendenti

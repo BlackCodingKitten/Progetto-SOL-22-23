@@ -350,7 +350,7 @@ void leggieSomma (void*arg){
         perror("socket()");
         exit(EXIT_FAILURE);
     }
-    string filePath = *(string*)arg;
+    string filePath = *(string)arg;
     long somma = 0;
 
     FILE*file=fopen(filePath,'rb');

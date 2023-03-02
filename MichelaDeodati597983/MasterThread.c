@@ -32,6 +32,7 @@
 #include <MasterThread.h>
 #include <WorkerPool.h>
 #include <Util.h>
+#include <Collector.h>
 
 
 
@@ -114,21 +115,92 @@ void runMasterThread(int argc,string argv[]){
         ++i;
     }
     free(tmp);
+    free(d_directoryName);
+    //ignoro il segnale sigpipe per evitare di essere terminato da una scrittura su socket
+    struct sigaction s;
+    memset(&s,0,sizeof(s));
+    s.sa_handler=SIG_IGN;
+    if((sigaction(SIGPIPE,&s,NULL))==-1){
+        perror("sigaction()");
+        for(int h=0; h<dim; h++){
+            free(argarray[h]);
+        }free(argarray);
+        exit(EXIT_FAILURE);
+    }
 
+    //gestisco il signal handler
+    sigset_t mask;
+    sigemptyset(&mask);
+    sigaddset(&mask, SIGINT); 
+    sigaddset(&mask, SIGHUP);
+    sigaddset(&mask, SIGTERM);
+    sigaddset(&mask, SIGUSR1);
+
+    if(pthread_sigmask(SIG_BLOCK,&mask,NULL)!=0){
+        fprintf(stderr, "fatal error pthread_sigmask\n");
+        for(int h=0; h<dim; h++){
+            free(argarray[h]);
+        }free(argarray);
+        exit(EXIT_FAILURE);
+    }
+
+
+
+    pthread_t sigHandler;
+    bool stop=false;
+    sigHarg argument ={ &stop, &mask };
+    if(pthread_create(&sigHandler,NULL, &sigHandlerTask, (void*)&stop)){
+        for(int h=0; h<dim; h++){
+            free(argarray[h]);
+        }free(argarray);
+        fprintf(stderr, "errore nella creazione del sighandler\n");
+        exit(EXIT_FAILURE);
+    }
+
+
+    //creo la threadpool
     workerpool_t *wpool=NULL;
     
     //controllo che nella creazione della threadpool vada tutto bene
     if((wpool =createWorkerpool(n_nthread,q_queueLen))==NULL){
         fprintf(stderr, "ERRORE FATALE NELLA CREAZIONE DELLA THREADPOOL\n");
-        unlink(SOCKET_NAME);
+        for(int h=0; h<dim; h++){
+            free(argarray[h]);
+        }free(argarray);
         exit(EXIT_FAILURE);
     }
-
-    //gestisco il signal handler
-
-
-    
-    
+    int index=0;
+    while(!stop&&index<dim){
+        int check=addToWorkerpool(wpool,leggieSomma,(void*)argarray[index]);
+        if(check==0){
+            //incremento l'indice solo se riesco ad assegnare correttamente la task alla threadpool
+            ++index;
+            sleep(t_delay);
+            continue;
+        }else{
+            if(check==1){
+                //coda piena
+                fprint(stderr, "Coda delle task piena");
+                //non incremento l'indice e riprovo al giro successivo //non aspetto nemmeno i secondi;
+                continue;
+            }else{
+                fprintf(stderr, "FATAL ERROR IN THREADPOOL");
+                break;
+            }
+        }
+    }
+    //distruggo la threadpool ma aspetto che siano completate le task pendenti
+    if(stop){
+        //se sono terminata per il segnale allora forzo l'uscita dalla threadpool
+        destroyWorkerpool(wpool,true);
+    }else{
+        destroyWorkerpool(wpool,false);
+    }
+    //aspetto che il sighandler termini
+    pthread_join(sigHandler,NULL);
+    for(int y=0; y<dim; y++){
+        free(argarray[i]);
+    }free(argarray);
 }
 
 int checkNthread(const int nthread){
@@ -157,8 +229,7 @@ int isFile(const string filePath){
 
 
 static void* sigHandlerTask (void*arg){
-    sigset_t * set = ((sighandler_t*)arg)->set;
-    int pfd = ((sighandler_t*)arg)->signalPipe;
+    sigset_t*set =((sigHarg*)arg)->set;
 
     while (true){
         int sig;
@@ -171,14 +242,15 @@ static void* sigHandlerTask (void*arg){
         switch (sig){
             case SIGINT:
                 fprintf(stdout, "Catturato segnale SIGINT\n");
+                *(((sigHarg*)arg)->termina) =true;
+                return NULL;
             case SIGHUP:
                 fprintf(stdout, "Catturato segnale SIGHUP\n");
+                *(((sigHarg*)arg)->termina) =true;
+                retrun NULL;
             case SIGTERM:
                 fprintf(stdout, "Catturato segnale SIGTERM\n");
-            case SIGQUIT:
-                fprintf(stdout, "Catturato segnale SIGQUIT\n");
-                //chiudo la pipe per notificare al thread listener che ho ricevuto un segnale di terminazione
-                close(pfd);
+                *(((sigHarg*)arg)->termina) =true;
                 retrun NULL;
             case SIGUSR1:
                 //stabilisco una connessione con il collector per dirgli di stampare i risultati ottenuti fino ad adesso
@@ -207,6 +279,7 @@ static void* sigHandlerTask (void*arg){
                 break;
         }
     }
+    return NULL;
 
 }
 

@@ -39,17 +39,7 @@ int isFile(const char* filePath);
 int findFileDir (const char* dirName, char** saveFile, int index);
 
 int main (int argc, char*argv[]){
-    //ricavo il percorso corrente del progetto
-    char* path=malloc(sizeof(char)*PATH_MAX);
-    getcwd(path, PATH_MAX);
-    //calcolo la dimensione della stringa senza l'ultima cartella 
-    int n=strlen(path)-strlen(strrchr(path,'/'));
-    char* tmp=malloc(sizeof(char)*PATH_MAX);
-    strcpy(tmp,path);
-    memset(path,'\0',strlen(path));
-    strncpy(path,tmp,n);
-    //puts(path);
-    free(tmp);
+
 
     
     dataFile*array=malloc(sizeof(dataFile)*40);
@@ -63,7 +53,7 @@ int main (int argc, char*argv[]){
         if(strstr(argv[i],"file") && strstr(argv[i],".dat")){
             //cerco nella path corrente di lavoro
             strcpy(array[x].filename, argv[i]);
-            strcpy(array[x].filepath,searchFile(path,argv[i]));
+            //strcpy(array[x].filepath,searchFile(path,argv[i]));
             ++x;
         }else{
             //findFileDir(realpath(argv[i],NULL),a,0);
@@ -90,7 +80,7 @@ int main (int argc, char*argv[]){
         puts(array[i].filepath);
     }
     free(array);
-    free(path);
+    //free(path);
     return 0;
 }
 

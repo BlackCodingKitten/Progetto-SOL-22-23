@@ -21,10 +21,9 @@
 #define QUEUE_SIZE_DEFAULT 8
 #define DELAY_DEFAULT 0
 
-
-typedef struct sighandler_t{
-    sigset_t * set;         //set dei segnali da gestire
-    int signalPipe;          //descrittore di una pipe senza nome 
-}sighandler_t;
+typedef struct{
+    bool*termina;
+    sigset_t*set;
+}sigHarg;
 
 void runMasterThread(int argc,string argv[]);
