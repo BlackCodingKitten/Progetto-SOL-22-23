@@ -1,4 +1,5 @@
 #define _POSIX_C_SOURCE 2001112L
+#define _OPEN_SYS_ITOA_EXT
 /**
  * @file MasterThread.c
  * @author Michela Deodati 597983
@@ -8,8 +9,7 @@
  * 
  * 
  */
-#define _POSIX_C_SOURCE 200112L
-#define _OPEN_SYS_ITOA_EXT
+
 #include <pthread.h>
 #include <unistd.h>
 #include <ctype.h>
@@ -22,6 +22,7 @@
 #include <dirent.h>
 #include <sys/stat.h>
 #include <string.h>
+#include <getopt.h>
 #include <sys/select.h>
 #include <sys/socket.h>
 #include <sys/types.h>
@@ -29,26 +30,131 @@
 #include <signal.h>
 
 #include <MasterThread.h>
+#include <WorkerPool.h>
 #include <Util.h>
+
+
+
+
+void runMasterThread(int argc,string argv[]){
+    int n_nthread = NTHREAD_DEFAULT;
+    int q_queueLen= QUEUE_SIZE_DEFAULT;
+    int t_delay= DELAY_DEFAULT;
+    string d_directoryName =(string)malloc(sizeof(char)*PATH_LEN);
+
+
+    //getopt per controllare gli argomanti del main
+    int fileIndex=1; //tiene traccia dell'indice di argv[] in cui si trovano i file
+
+    int opt;
+    opterr=0;
+
+    int argvalue;
+
+    //inizio la scan
+    while((opt=getopt(argc, argv, "n:q:d:t:"))!=-1){
+        //switch su opt:
+        switch (opt)
+        {
+        case 'n':
+        fileIndex+=2;
+            //printf("NUMERO DI THREAD: %s\n", optarg);
+            argvalue=StringToNumber(optarg);
+            n_nthread=checkNthread(argvalue);
+            break;
+        case 'q':
+        fileIndex+=2;
+            //printf("LUNGHEZZA DELLA CODA: %s\n", optarg);
+            argvalue=StringToNumber(optarg);
+            q_queueLen=checkqSize(argvalue);
+            break;
+        case 't':
+        fileIndex+=2;
+            //printf("DELAY: %s\n", optarg);
+            argvalue=StringToNumber(optarg);
+            t_delay=checkDelay(argvalue);
+            break;
+        case 'd':
+        fileIndex+=2;
+            //printf("DIRECTORY: %s\n", optarg);        
+            //dentro optarg ho il nome della cartella quindi:
+            memset(d_directoryName, '\0', PATH_LEN);
+            strcpy(d_directoryName,optarg);
+        default:
+            //printf("sono in default\n");
+            //NON FACCIO NULLA 
+            break;
+        }
+    }//end while optarg
+
+    string*tmp=(string)malloc(sizeof(string)*20);
+    for(int i=0; i<20; i++){
+        tmp[i]=NULL;
+    }
+    findFileDir(d_directoryName,tmp,0);
+    int x=0;
+    for(;tmp[x]!=NULL;){
+        ++x;
+    }
+
+    int dim=(argc-fileIndex)+x;
+    string*argarray=malloc(sizeof(string)*dim);
+    int i=0;
+    for(i=0; fileIndex<argc; i++){
+        argarray[i]=malloc(sizeof(char)*PATH_LEN);
+        memset(argarray[i],'\0', PATH_LEN);
+        strcpy(argarray[i], argv[fileIndex]);
+        ++fileIndex;
+    }
+    for(int k=0;k<x;k++){
+        argarray[i]=malloc(sizeof(char)*PATH_LEN);
+        memset(argarray[i],'\0', PATH_LEN);
+        strcpy(argarray[i], tmp[k]);
+        free(tmp[i]);
+        ++i;
+    }
+    free(tmp);
+
+    workerpool_t *wpool=NULL;
+    
+    //controllo che nella creazione della threadpool vada tutto bene
+    if((wpool =createWorkerpool(n_nthread,q_queueLen))==NULL){
+        fprintf(stderr, "ERRORE FATALE NELLA CREAZIONE DELLA THREADPOOL\n");
+        unlink(SOCKET_NAME);
+        exit(EXIT_FAILURE);
+    }
+
+    //gestisco il signal handler
+
+
+    
+    
+}
+
+int checkNthread(const int nthread){
+    //controllo che il valore di nthread passato al main sia >0;
+    return ((nthread>0)? nthread : NTHREAD_DEFAULT);
+}
+
+int checkqSize (const int qsize){
+    //controllo che il valore della lunghezza della coda condivisa sia >0
+    return((qsize>0)? qsize:QUEUE_SIZE_DEFAULT);
+}
+
+int checkDelay (const int time){
+    //controllo che il delay specificato sia >=0
+    if((time>0)? time: DELAY_DEFAULT);
+}
 
 int isFile(const string filePath){
     struct stat path_stat;
-    if(stat(filePath,&path_stat.st_mode)!=0){
+    if(stat(filePath,&path_stat)!=0){
+        perror("stat");
         return 0;
     }
-    return S_ISREG(path_stat.st_mode);
+    return S_ISREG(path_stat.st_mode) && strstr(filePath,".dat");
 }
 
-string getProjectDirectory(void){
-    string path=malloc(sizeof(char)*PATH_LEN);
-    getcwd(path,PATH_LEN);
-    int n =  strlen(path)-strlen(strrchr(path,'/'));
-    string tmp = malloc(sizeof(char)*PATH_LEN);
-    memset(tmp,'\0', PATH_LEN);
-    strncpy(tmp,path,n);
-    free(path);
-    return tmp;
-}
 
 static void* sigHandlerTask (void*arg){
     sigset_t * set = ((sighandler_t*)arg)->set;
@@ -104,140 +210,7 @@ static void* sigHandlerTask (void*arg){
 
 }
 
-void runMasterThread(int argc,string argv[]){
-    int n_nthread;
-    int q_queueLen;
-    int t_delay;
-    string d_directoryName =(string)malloc(sizeof(char)*PATH_LEN);
-
-    int totFile=argc; //parto dal considerare che tutti gli elementi passati siano file
-
-    for(int i=0; i<argc; i++){
-        if(strcmp(argv[i],"-n")==0){
-            totFile=totFile-2; // tolgo 2 elementi che non sono file
-            n_nthread=checkNthread(StringToNumber(argv[i+1]));
-            ++i;
-        }
-        if(strcmp(argv[i],"-q")==0){
-            totFile=totFile-2;
-            q_queueLen=checkqSize(StringToNumber(argv[i+1]));
-            ++i;
-        }
-        if(strcmp(argv[i],"-t")==0){
-            totFile=totFile-2;
-            n_nthread=checkDelay(StringToNumber(argv[i+1]));
-            ++i;
-        }
-        if(strcmp(argv[i],"-d")==0){
-            totFile=totFile-2;
-            memset(d_directoryName,'\0',PATH_LEN);
-            strncpy(d_directoryName, argv[i+1],strlen(argv[i+1]));
-            ++i;
-        }
-    }
-    //ho settato tutti i valori passati a riga di comando della threadpool
-    //ora devo cerarmi un elenco di file (ricavando le loro path)
-
-    //ricavo prima la path da cui inizialre la ricerca dei file
-    string path= getProjectDirectory();
-
-    string * appo = malloc(sizeof(string)*100);
-    for(int i=0; i<100; i++){
-        appo[i]=NULL;//inizializzo appo
-    }
-    findFileDir(d_directoryName,appo,0);
-    int b=0;
-    while(appo[b]!=NULL){
-        ++b;
-    }
-    totFile=totFile+b; //adesso conosco il valore preciso di quanti file ci sono cioè [(argc - (opzioni+argomenti))+file nella directory]
-    taskArgument * fileArray =(taskArgument*)malloc(sizeof(taskArgument)*40);
-    int indexCounter=0;
-    for(int i=0; i<argc; i++){
-        if(strstr(argv[i],"file") && strstr(argv[i],".dat")){
-            //ricerco il file e lo salvo nell'array
-            strcpy(fileArray[i].name, argv[i]);
-            strcpy(fileArray[i].path,searchFile(path,argv[i]));
-            ++indexCounter;
-        }
-    }
-    for(int i=0; i<b; i++){
-        strcpy(fileArray[indexCounter].name, appo[i]);
-        strcpy(fileArray[indexCounter].path, realpath(appo[i],NULL));
-        free(appo[i]);
-    }
-    free(appo);
-    
-    
-}
-
-int checkNthread(const int nthread){
-    //controllo che il valore di nthread passato al main sia >0;
-    return ((nthread>0)? nthread : NTHREAD_DEFAULT);
-}
-
-int checkqSize (const int qsize){
-    //controllo che il valore della lunghezza della coda condivisa sia >0
-    return((qsize>0)? qsize:QUEUE_SIZE_DEFAULT);
-}
-
-int checkDelay (const int time){
-    //controllo che il delay specificato sia >=0
-    if((time>0)? time: DELAY_DEFAULT);
-}
-
-int isFile(const char* filePath){
-    struct stat path_stat;
-    if(stat(filePath,&path_stat)!=0){
-        perror("stat");
-        return 0;
-    }
-    return S_ISREG(path_stat.st_mode) && strstr(filePath,".dat");
-}
-
-char* searchFile (char* dirname, char* filename){
-    //apro la cartella chiamata dirname 
-    DIR* directory;
-    if((directory=opendir(dirname))==NULL){
-        perror("Impossibile trovare il percorso del file");
-        exit(EXIT_FAILURE);
-    }
-    //esploro la cartella 
-    struct dirent * dirptr;
-    while(errno=0, (dirptr=readdir(directory))!=NULL){
-        //escludo ./ e ../
-        if(dirptr->d_name[0]=='.'){
-            continue;
-        }
-        char* path =(char*)malloc(sizeof(char)*PATH_LEN);
-        strcpy(path,dirname);
-        strcat(path,"/");
-        strcat(path, dirptr->d_name);
-
-        struct stat infodir;
-        if(stat(path,&infodir)==-1){
-            perror(path);
-            exit(EXIT_FAILURE);
-        }
-        if(strcmp(dirptr->d_name,filename)==0){
-            return path;
-        }
-        if(S_ISDIR(infodir.st_mode)){
-            char* ret=malloc(sizeof(char)*255);
-            if((ret = searchFile(path,filename))!=NULL){
-
-                    return ret;                
-            }else{
-                free(path);
-                continue;
-            }
-        }
-    }
-    closedir(directory);
-    return NULL;
-}
-
-int findFileDir (const char* dirName, char** saveFile, int index){
+void findFileDir (const char* dirName, char** saveFile, int index){
     char** dirTree=malloc(sizeof(char*)*100);
     int treeI=0;
     struct stat buf;
