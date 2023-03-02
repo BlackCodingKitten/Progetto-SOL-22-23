@@ -5,7 +5,7 @@
  * @author Michela Deodati 597983
  * @brief implementazione dell'intefraccia MasterThread
  * @version 0.1
- * @date 15-03-1013
+ * @date 15-03-2023
  * 
  * 
  */
