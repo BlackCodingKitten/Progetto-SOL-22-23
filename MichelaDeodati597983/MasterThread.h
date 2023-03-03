@@ -27,4 +27,10 @@ typedef struct{
     sigset_t*set;
 }sigHarg;
 
+/**
+ * @brief funzione principale che svolge tutte le funzioni del MasterThread
+ * 
+ * @param argc numero di argomenti passati in input
+ * @param argv char*[] degli argomenti
+ */
 void runMasterThread(int argc,string argv[]);

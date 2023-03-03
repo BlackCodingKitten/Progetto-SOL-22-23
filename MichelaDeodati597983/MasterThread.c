@@ -38,6 +38,7 @@
 
 
 void runMasterThread(int argc,string argv[]){
+
     int n_nthread = NTHREAD_DEFAULT;
     int q_queueLen= QUEUE_SIZE_DEFAULT;
     int t_delay= DELAY_DEFAULT;
@@ -99,132 +100,179 @@ void runMasterThread(int argc,string argv[]){
     }
 
     int dim=(argc-fileIndex)+x;
-    string*argarray=malloc(sizeof(string)*dim);
-    int i=0;
-    for(i=0; fileIndex<argc; i++){
-        argarray[i]=malloc(sizeof(char)*PATH_LEN);
-        memset(argarray[i],'\0', PATH_LEN);
-        strcpy(argarray[i], argv[fileIndex]);
-        ++fileIndex;
-    }
-    for(int k=0;k<x;k++){
-        argarray[i]=malloc(sizeof(char)*PATH_LEN);
-        memset(argarray[i],'\0', PATH_LEN);
-        strcpy(argarray[i], tmp[k]);
-        free(tmp[i]);
-        ++i;
-    }
-    free(tmp);
-    free(d_directoryName);
-    //ignoro il segnale sigpipe per evitare di essere terminato da una scrittura su socket
-    struct sigaction s;
-    memset(&s,0,sizeof(s));
-    s.sa_handler=SIG_IGN;
-    if((sigaction(SIGPIPE,&s,NULL))==-1){
-        perror("sigaction()");
-        for(int h=0; h<dim; h++){
-            free(argarray[h]);
-        }free(argarray);
-        exit(EXIT_FAILURE);
-    }
-
-    //gestisco il signal handler
-    sigset_t mask;
-    sigemptyset(&mask);
-    sigaddset(&mask, SIGINT); 
-    sigaddset(&mask, SIGHUP);
-    sigaddset(&mask, SIGTERM);
-    sigaddset(&mask, SIGUSR1);
-
-    if(pthread_sigmask(SIG_BLOCK,&mask,NULL)!=0){
-        fprintf(stderr, "fatal error pthread_sigmask\n");
-        for(int h=0; h<dim; h++){
-            free(argarray[h]);
-        }free(argarray);
-        exit(EXIT_FAILURE);
-    }
-
-
-
-    pthread_t sigHandler;
-    bool stop=false;
-    sigHarg argument ={ &stop, &mask };
-    if(pthread_create(&sigHandler,NULL, &sigHandlerTask, (void*)&stop)){
-        for(int h=0; h<dim; h++){
-            free(argarray[h]);
-        }free(argarray);
-        fprintf(stderr, "errore nella creazione del sighandler\n");
-        exit(EXIT_FAILURE);
-    }
-
-
-    //creo la threadpool
-    workerpool_t *wpool=NULL;
-    
-    //controllo che nella creazione della threadpool vada tutto bene
-    if((wpool =createWorkerpool(n_nthread,q_queueLen))==NULL){
-        fprintf(stderr, "ERRORE FATALE NELLA CREAZIONE DELLA THREADPOOL\n");
-        for(int h=0; h<dim; h++){
-            free(argarray[h]);
-        }free(argarray);
-        exit(EXIT_FAILURE);
-    }
-    int index=0;
-    while(!stop&&index<dim){
-        int check=addToWorkerpool(wpool,leggieSomma,(void*)argarray[index]);
-        if(check==0){
-            //incremento l'indice solo se riesco ad assegnare correttamente la task alla threadpool
-            ++index;
-            sleep(t_delay);
-            continue;
-        }else{
-            if(check==1){
-                //coda piena
-                fprint(stderr, "Coda delle task piena");
-                //non incremento l'indice e riprovo al giro successivo //non aspetto nemmeno i secondi;
-                continue;
-            }else{
-                fprintf(stderr, "FATAL ERROR IN THREADPOOL");
-                break;
-            }
-        }
-    }
-    //distruggo la threadpool ma aspetto che siano completate le task pendenti
-    if(stop){
-        //se sono terminata per il segnale allora forzo l'uscita dalla threadpool
-        destroyWorkerpool(wpool,true);
+    //faccio partire il processo collector facendo la fork perchè adesso conosco quanti file ho il totale da calcolare
+    pid_t process_id=fork();
+    if(process_id==0){
+        fprint(stdout, "Sono il processo collector avviato dal MasterThread");
+        runCollector(dim);
     }else{
-        destroyWorkerpool(wpool,false);
+        if(process_id<0){
+            fprintf(stderr, "Errore fatale riga 110 Masterthread.c process_id=%d\n", process_id);
+            free(tmp);
+            free(d_directoryName);
+            exit(EXIT_FAILURE);
+        }else{
+            //process_id>0 //processo padre
+            string*argarray=malloc(sizeof(string)*dim);
+            int i=0;
+            for(i=0; fileIndex<argc; i++){
+                argarray[i]=malloc(sizeof(char)*PATH_LEN);
+                memset(argarray[i],'\0', PATH_LEN);
+                strcpy(argarray[i], argv[fileIndex]);
+                ++fileIndex;
+            }
+            for(int k=0;k<x;k++){
+                argarray[i]=malloc(sizeof(char)*PATH_LEN);
+                memset(argarray[i],'\0', PATH_LEN);
+                strcpy(argarray[i], tmp[k]);
+                free(tmp[i]);
+                ++i;
+            }
+            free(tmp);
+            free(d_directoryName);
+            //ignoro il segnale sigpipe per evitare di essere terminato da una scrittura su socket
+            struct sigaction s;
+            memset(&s,0,sizeof(s));
+            s.sa_handler=SIG_IGN;
+            if((sigaction(SIGPIPE,&s,NULL))==-1){
+                perror("sigaction()");
+                for(int h=0; h<dim; h++){
+                    free(argarray[h]);
+                }free(argarray);
+                exit(EXIT_FAILURE);
+            }
+
+            //gestisco il signal handler
+            sigset_t mask;
+            sigemptyset(&mask);
+            sigaddset(&mask, SIGINT); 
+            sigaddset(&mask, SIGHUP);
+            sigaddset(&mask, SIGTERM);
+            sigaddset(&mask, SIGUSR1);
+
+            if(pthread_sigmask(SIG_BLOCK,&mask,NULL)!=0){
+                fprintf(stderr, "fatal error pthread_sigmask\n");
+                for(int h=0; h<dim; h++){
+                    free(argarray[h]);
+                }free(argarray);
+                exit(EXIT_FAILURE);
+            }
+
+
+
+            pthread_t sigHandler;
+            bool stop=false;
+            sigHarg argument ={ &stop, &mask };
+            if(pthread_create(&sigHandler,NULL, &sigHandlerTask, (void*)&stop)){
+                for(int h=0; h<dim; h++){
+                    free(argarray[h]);
+                }free(argarray);
+                fprintf(stderr, "errore nella creazione del sighandler\n");
+                exit(EXIT_FAILURE);
+            }
+
+
+            //creo la threadpool
+            workerpool_t *wpool=NULL;
+            
+            //controllo che nella creazione della threadpool vada tutto bene
+            if((wpool =createWorkerpool(n_nthread,q_queueLen))==NULL){
+                fprintf(stderr, "ERRORE FATALE NELLA CREAZIONE DELLA THREADPOOL\n");
+                for(int h=0; h<dim; h++){
+                    free(argarray[h]);
+                }free(argarray);
+                exit(EXIT_FAILURE);
+            }
+            int index=0;
+            while(!stop && index<dim){
+                int check=addToWorkerpool(wpool,leggieSomma,(void*)argarray[index]);
+                if(check==0){
+                    //incremento l'indice solo se riesco ad assegnare correttamente la task alla threadpool
+                    ++index;
+                    sleep(t_delay);
+                    continue;
+                }else{
+                    if(check==1){
+                        //coda piena
+                        fprint(stderr, "Coda delle task piena");
+                        //non incremento l'indice e riprovo al giro successivo //non aspetto nemmeno i secondi;
+                        continue;
+                    }else{
+                        fprintf(stderr, "FATAL ERROR IN THREADPOOL");
+                        break;
+                    }
+                }
+            }
+            //distruggo la threadpool ma aspetto che siano completate le task pendenti
+            destroyWorkerpool(wpool,false);
+            //aspetto che termini il collector
+            wait(NULL);//termina quando uno dei figli termina
+            //aspetto che il sighandler termini
+            pthread_join(sigHandler,NULL);
+
+            for(int y=0; y<dim; y++){
+                free(argarray[i]);
+            }free(argarray);
+            }
     }
-    //aspetto che il sighandler termini
-    pthread_join(sigHandler,NULL);
-    for(int y=0; y<dim; y++){
-        free(argarray[i]);
-    }free(argarray);
 }
 
+/**
+ * @brief controlla il valore passato all'opzione -n
+ * 
+ * @param nthread 
+ * @return int 
+ */
 int checkNthread(const int nthread){
     //controllo che il valore di nthread passato al main sia >0;
     return ((nthread>0)? nthread : NTHREAD_DEFAULT);
 }
 
+/**
+ * @brief controlla il valore passato all'opzione -q
+ * 
+ * @param qsize 
+ * @return int 
+ */
 int checkqSize (const int qsize){
     //controllo che il valore della lunghezza della coda condivisa sia >0
     return((qsize>0)? qsize:QUEUE_SIZE_DEFAULT);
 }
 
+/**
+ * @brief controlla il valore passato all'opzione -t
+ * 
+ * @param time 
+ * @return int 
+ */
 int checkDelay (const int time){
     //controllo che il delay specificato sia >=0
     if((time>0)? time: DELAY_DEFAULT);
 }
 
+/**
+ * @brief controlla che il file che gli viene passato sia un regular file
+ * 
+ * @param filePath 
+ * @return int 
+ */
 int isFile(const string filePath){
     struct stat path_stat;
-    if(stat(filePath,&path_stat)!=0){
+    string tmp =malloc(sizeof(char)*strlen(filePath)+3);
+    memset(tmp, '\0', strlen(filePath)+3);
+    strcpy(tmp, "./");
+    strcat(tmp, filePath);
+    if(stat(tmp,&path_stat)!=0){
         perror("stat");
         return 0;
     }
-    return S_ISREG(path_stat.st_mode) && strstr(filePath,".dat");
+    if(S_ISREG(path_stat.st_mode)){
+        //controllo anche che sia il tipo di file corretto che i miei thread possono leggere
+        if(strstr(filePath,".dat") && strstr(filePath, "file")){
+            return 1;
+        }
+    }
+    return 0;
 }
 
 
@@ -242,16 +290,16 @@ static void* sigHandlerTask (void*arg){
         switch (sig){
             case SIGINT:
                 fprintf(stdout, "Catturato segnale SIGINT\n");
-                *(((sigHarg*)arg)->termina) =true;
+                *(((sigHarg*)arg)->termina) =true; //passo al thread l'indirizzo del bool che mi controlla il ciclo while 
                 return NULL;
             case SIGHUP:
                 fprintf(stdout, "Catturato segnale SIGHUP\n");
                 *(((sigHarg*)arg)->termina) =true;
-                retrun NULL;
+                return NULL;
             case SIGTERM:
                 fprintf(stdout, "Catturato segnale SIGTERM\n");
                 *(((sigHarg*)arg)->termina) =true;
-                retrun NULL;
+                return NULL;
             case SIGUSR1:
                 //stabilisco una connessione con il collector per dirgli di stampare i risultati ottenuti fino ad adesso
                 struct sockaddr_un a;

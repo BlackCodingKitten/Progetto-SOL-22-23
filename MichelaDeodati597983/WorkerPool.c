@@ -29,7 +29,7 @@
 
 /**
  * @function: wpoolWorker
- * @brief funzione eseguita dal workerche appartiene a wpool
+ * @brief funzione eseguita dal worker che appartiene a wpool
  * 
  * @param pool workerpool_t
  */
@@ -46,7 +46,7 @@ static void * wpoolWorker(void* pool){
     }
     //acquisisco la lock
     if(pthread_mutex_lock(&(wpool->lock))!=0){
-        fprintf(stderr, "-36-pthread_mutex_lock(&(wpool->lock)): errore\n");
+        fprintf(stderr, "errore acqusizione della lock da parte del thread:%d\n", self.wpoolIndex);
         return NULL;
     }
     while(true){
@@ -73,20 +73,20 @@ static void * wpoolWorker(void* pool){
         }
         wpool->activeTask++;
         if(pthread_mutex_unlock(&(wpool->lock))!=0){
-            fprintf(stderr, "-63-pthread_mutex_unlock(&(wpool->lock)):errore\n");
+            fprintf(stderr, "errore nella unlock da parte del thread:%d\n", self.wpoolIndex);
             return NULL;
         }
         //eseguo la task
         (*(task.funPtr))(task.arg);
         //acquisisco la lock per decrementare le activeTask
         if(pthread_mutex_lock(&(wpool->lock))!=0){
-            fprintf(stderr, "-70-pthread_mutex_lock(&(wpool->lock)): errore\n");
+            fprintf(stderr, "errore acqusizione della lock per decrementare le activeTask da parte del thread:%d\n", self.wpoolIndex);
             return NULL;
         }
         wpool->activeTask--;
     }    
     if(pthread_mutex_unlock(&(wpool->lock))!=0){
-        fprintf(stderr, "-76-pthread_mutex_unlock(&(wpool->lock)):errore\n");
+        fprintf(stderr, "errore nella unlock da parte del thread:%d\n", self.wpoolIndex);
         return NULL; 
     }
     fprintf(stderr, "Worker %d in uscita.\n", self.wpoolIndex);
@@ -104,7 +104,7 @@ workerpool_t * createWorkerpool (int numWorkers, int pendingSize){
     workerpool_t * wpool;
     if((wpool=(workerpool_t*)malloc(sizeof(workerpool_t)))==NULL){
         //se la malloc ritorna NULL stampo l'errore e ritorno NULL
-        perror("wpool=(workerpool_t*)malloc(sizeof(workerpool_t)");
+        perror("Fallisce l'allocazione della workerpool");
         return NULL;
     }
 
@@ -125,7 +125,7 @@ workerpool_t * createWorkerpool (int numWorkers, int pendingSize){
     //alloco l'array di workers
     if((wpool->workers=(workerthread_t*)malloc(sizeof(workerthread_t)*numWorkers))==NULL){
         //se fallisce la malloc
-        perror("wpool->workers=(pthread_t*)malloc(sizeof(pthread_t)*numWorkers)");
+        perror("Fallisce l'allocazione dell'array di theread nella workerpool");
         //libero la wpool
         free(wpool);
         return NULL;
@@ -133,7 +133,7 @@ workerpool_t * createWorkerpool (int numWorkers, int pendingSize){
     //alloco la queue di workertask
     if((wpool->pendingQueue=(workertask_t*)malloc(sizeof(workertask_t)*pendingSize))){
         //se fallisce la malloc
-        perror("wpool->pendingQueue=(workertask_t*)malloc(sizeof(workertask_t)*pendingSize)");
+        perror("Fallisce l'allocazione della pendingQueue nella workerpool");
         //libero la memoria
         free(wpool->workers);
         free(wpool);
@@ -141,7 +141,7 @@ workerpool_t * createWorkerpool (int numWorkers, int pendingSize){
     }
     //inizializzo la mutex della threadpool
     if((pthread_mutex_init(&(wpool->lock), NULL))!=0){
-        perror("pthread_mutex_init(&(wpool->lock), NULL)");
+        perror("fallisce l'inizializzazione della mutex per la coda nella workerpool");
         free(wpool->workers);
         //adesso devo liberare anche la coda
         free(wpool->pendingQueue);
@@ -150,13 +150,14 @@ workerpool_t * createWorkerpool (int numWorkers, int pendingSize){
     }
     //inizializzo la cond della threadpool
     if((pthread_cond_init(&(wpool->cond),NULL))!=0){
-        perror("pthread_cond_init(&(wpool->cond),NULL)");
+        perror("Fallisce l'inizializzazione della condition nella workerpool");
         free(wpool->workers);
         free(wpool->pendingQueue);
         free(wpool);
     }
     for(int i=0; i<numWorkers;i++){
         if(pthread_create(&(wpool->workers[i].wid),NULL,&wpoolWorker, (void*)wpool)!=0){
+            fprintf(stderr, "Fallisce la creazione dei thread della pool\n");
             //se la pthread_create() non va a buon fine,
             //libero la memoria e forzo l'uscita dei thread
             destroyWorkerpool(wpool,true);
@@ -196,10 +197,11 @@ bool destroyWorkerpool (workerpool_t* wpool, bool forcedExit){
     }
 
     for(int i=0; i<wpool->numWorkers;i++){
+        //faccio la join con tutti i thread per attendere la terminazione delle task già inserite in coda
         if(pthread_join(wpool->workers[i].wid,NULL)!=0){
             errno=EFAULT;
             if(pthread_mutex_unlock(&(wpool->lock))!=0){
-                fprintf(stderr,"Errore Fatale unlock\n");
+                fprintf(stderr,"Errore Fatale unlock riga 204 Workerpool.c\n");
             }
             return false;
         }
@@ -207,6 +209,7 @@ bool destroyWorkerpool (workerpool_t* wpool, bool forcedExit){
     freeWorkPool(wpool);
     return true;
 }
+
 /**
  * @function freeWorkPool
  * @brief libera le risorse della workerpool
@@ -224,52 +227,6 @@ static void freeWorkPool(workerpool_t* wpool){
     free(wpool);
 }
 
-bool spawnDetachedThread (void(*task)(void*),void*arg){
-    //task=NULL è invalido
-    if(task==NULL){
-        errno=EINVAL;
-        return false;
-    }
-    workertask_t*wtask;
-    if((wtask=malloc(sizeof(workertask_t)))==NULL){
-        perror("wtask=malloc(sizeof(workertask_t)");
-        return false;
-    }
-    wtask->funPtr=task;
-    wtask->arg=arg;
-
-    pthread_t dThread;
-    pthread_attr_t attr;
-    //fa lo spawn di un thread in modalità detached
-    if(pthread_attr_init(&attr)!=0){
-        perror("pthread_attr_init(&attr)");
-        return false;
-    }
-    if(pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED)!=0){
-        perror("pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED)");
-        return false;
-    }
-    if(pthread_create(&dThread,&attr,&dThreadTask,(void*)wtask)!=0){
-        perror("pthread_create(&dThread,&attr,&dThreadTask,(void*)wtask)");
-        errno=EFAULT;
-        free(wtask);
-        return(false);
-    }
-    return true;
-}
-
-/**
- * @function dThreadTask
- * @brief task eseguita da un thread non appartenete al pool
- * 
- * @param arg worker_t che ha puntatore a funzione e argomenti della funzione a cui punta;
- */
-static void* dThreadTask(void*arg){
-    workertask_t*f=(workertask_t*)arg;
-    //esegue la funzione
-    (*(f->funPtr))(f->arg);
-    free(f);
-}
 
 int addToWorkerpool (workerpool_t* wpool, void(*task)(void*), void*arg){
     //controllo che la task non sia NULL e che la wpool non sia NULL
@@ -281,19 +238,19 @@ int addToWorkerpool (workerpool_t* wpool, void(*task)(void*), void*arg){
 
     //acquisico la lock
     if(pthread_mutex_lock(&(wpool->lock))!=0){
-        fprintf(stderr, "pthread_mutex_lock(&(wpool->lock)): errore");
+        fprintf(stderr, "Errore fatale lock riga 241 Workerpool.c");
         return -1;
     }
 
     int qSize=abs(wpool->queueSize);
-    //bool : dobbiamo gestire le task pendenti?
+    //bool : dobbiamo gestire le task pendenti? se è == -1 non vanno gestite quindi no pending diventa false
     bool noPending = (wpool->pendingQueue)==-1;
 
     //controllo se la coda è piena o se si è in fase di uscita:
     if(wpool->pendingQueueCount >= qSize || wpool->exiting){
         //unlock
         if(pthread_mutex_unlock(&(wpool->lock))!=0){
-            fprintf(stderr, "-222-pthread_mutex_unlock(&(wpool->lock)): errore");
+            fprintf(stderr, "Errore unlock riga 252 Workerpool.c");
             return -1;
         }
         //uscita col valore che indica queue piena
@@ -305,12 +262,13 @@ int addToWorkerpool (workerpool_t* wpool, void(*task)(void*), void*arg){
             //le task pendenti non vengono gestite perchè i workers sono tutti occupati
             assert(wpool->pendingQueueCount == 0);
             if(pthread_mutex_unlock(&(wpool->lock))!=0){
-                fprintf(stderr, "-233-pthread_mutex_unlock(&(wpool->lock)): errore");
+                fprintf(stderr, "Errore unlock riga 264 Workerpool.c");
                 return -1;
             }
             return 1;
         }
     }
+
     //inserico in coda la nuova task
     wpool->pendingQueue[wpool->queueTail].funPtr=task;
     wpool->pendingQueue[wpool->queueTail].arg=arg;
@@ -325,7 +283,7 @@ int addToWorkerpool (workerpool_t* wpool, void(*task)(void*), void*arg){
         errno=err;
         //rilascio la lock
         if(pthread_mutex_unlock(&(wpool->lock))!=0){
-            fprintf(stderr,"-251-pthread_mutex_unlock(&(wpool->lock)): errore\n");
+            fprintf(stderr,"Errore unlock riga 284 Workerpool.c\n");
         }
         //ritorno -1 in ogni caso
         return -1;
@@ -333,7 +291,7 @@ int addToWorkerpool (workerpool_t* wpool, void(*task)(void*), void*arg){
 
     //se ho aggiunto correttamente il thread rilascio la lock e return 0
     if(pthread_unlock_mutex(&(wpool->lock))!=0){
-        fprintf(stderr, "-259-pthread_mutex_unlock(&(wpool->lock)): errore\n");
+        fprintf(stderr, "Errore unlock riga 292 Workerpool.c\n");
         return -1;
     }
     return 0;
@@ -352,11 +310,11 @@ void leggieSomma (void*arg){
     }
     string filePath = *(string)arg;
     long somma = 0;
-
+    //apro il file in modalità lettura binaria
     FILE*file=fopen(filePath,'rb');
     if(file==NULL){
-        perror("fopen()");
-        fprintf(stderr, "error on %s",filePath);
+        perror(file);
+        fprintf(stderr, "Errore apertura file:%s\n",filePath);
         //----------------------------------------------------------
     }
     long fileDim=getFileSize(file)/ sizeof(long); //ricavo quanti numeri ci sono nel file
@@ -364,12 +322,16 @@ void leggieSomma (void*arg){
     long* fileArray =(long*)malloc(sizeof(long)*fileDim);
     //leggo tutti i valori del file 
     fread(fileArray,sizeof(long),fileDim,file);
+
     //sommo il prodotto del valore per l'indice
     for(int i=0; i<fileDim; i++){
         somma=somma+(fileArray[i]*i);
     }
+    //alloco il buffer per scrivere
     string buffer = malloc(sizeof(char)*FILE_BUFFER_SIZE);
-    sprintf(buffer, "%ld", somma); //converto il valore in stringa
+    memeset(buffer,'\0',FILE_BUFFER_SIZE);
+    sprintf(buffer, "%ld", somma); //converto il valore della somma in stringa
+    //attendo che il collector faccia l'accept
     while(connect(sock, (struct sockaddr*)&addr,sizeof(addr))==-1){
         if(errno=ENOENT){
             sleep(1);
@@ -399,10 +361,11 @@ void leggieSomma (void*arg){
     //al termine dell'invio al collector chiudo il client
     CLOSE_SOCKET(sock);
 }
+
 /**
  * @brief ricavare la dimensione in byte del file 
  * 
- * @param file 
+ * @param file nome del file
  * @return long 
  */
 long getFileSize(FILE *file) {

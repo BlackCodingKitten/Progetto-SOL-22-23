@@ -1,16 +1,20 @@
-
-/** * Progetto SOL 2022-2023: Farm
-*/
 /**
  * @file WorkerPool.h
- * @brief Interfaccia per il WorkerPool
-*/
+ * @author Michela Deodati 597983
+ * @brief implementazionde dell'interfaccia Workerpool
+ * @date 15-03-2023
+ * 
+ * @copyright Copyright (c) 2023
+ * 
+ */
 #ifndef WORKER_POOL_H_
 #define wORKER_POOL_H_
 
 #include <pthread.h>
-#include <Util.h>
 #include <stdbool.h>
+#include <Util.h>
+
+
 /**
  * @struct workerthread_t
  * @brief generico thread worker che appartiene alla pool
@@ -87,17 +91,6 @@ bool destroyWorkerpool (workerpool_t* wpool, bool forcedExit);
  * @return int 0 se va tutto bene, 1 non ci sono thread liberi o la coda è piena,-1 fallisce la chimata, setta errno
  */
 int addToWorkerpool (workerpool_t* wpool, void(*task)(void*), void*arg);
-
-/**
- * @function spawnDetachedThread
- * @brief lancia un thread che esegue la funzione task passata come parametro, il thread parte in modalità detached e non fa parte del pool
- * 
- * @param task funzione che il thread deve esguire
- * @param arg parametri della funzione eseguita dal thread
- * @return true 
- * @return false 
- */
-bool spawnDetachedThread (void(*task)(void*),void*arg);
 
 /**
  * @brief task del thread worker che fa i calcoli sul file
