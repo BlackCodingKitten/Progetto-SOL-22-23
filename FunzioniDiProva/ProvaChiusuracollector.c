@@ -1,9 +1,14 @@
 /*
-in questo file implemento la possibile chiusura tramite segnali SIGHUP,SIGINT,SIGTERM, del processo collector testandone il funzionamento
-in sostanza utilizzo una pipe che vine passata anche al signal_handelr_thread che mi serve per comunicare tra il Masterthread e il collector se sono stati ricevuti dei segnali
-l'idea è quella di implementare il collector come un server che acetta connessioni tramite una select anche se in realtà ogni thread apre e chiude la propria sochet di comunicazione con il thread Collecto
+in questo file implemento la possibile chiusura tramite segnali 
+SIGHUP,SIGINT,SIGTERM, del processo collector testandone il funzionamento
+in sostanza utilizzo una pipe che vine passata anche al signal_handelr_thread che mi 
+serve per comunicare tra il Masterthread e il collector se sono stati ricevuti dei segnali
+l'idea è quella di implementare il collector come un server che acetta connessioni tramite 
+una select anche se in realtà ogni thread apre e chiude la propria sochet di comunicazione 
+con il thread Collecto
 ****
-forse si potrebbe implementare  il masterthread in modo che stabilisca n_thread socket e ogni thread avrebbe la propria socket che poi verrebbero chiuse solo alla fine dal masterthread?
+forse si potrebbe implementare  il masterthread in modo che stabilisca n_thread socket e
+ ogni thread avrebbe la propria socket che poi verrebbero chiuse solo alla fine dal masterthread?
 vedo se rieco a fare una versione dummy di questa cosa in questo.c di prova */
 
 #define _POSIX_C_SOURCE 200112L
@@ -143,6 +148,8 @@ static void *sigH(void *arg)
             puts("SIG_HANDLER: ricevuto segnale SIGUSR1\nSIG_HANDLER: invio al child_process tramite la pipe il segnale di stampa");
             write(args.signal_pipe, "s", 2);
         }
+        //invio una lettera sola perchè c'è anche la possibilità che la select legga a pezzi il buffer che gli 
+        //viene mandato quindi per evitare letture parziali invio 1 solo elemento
     }
 }
 
