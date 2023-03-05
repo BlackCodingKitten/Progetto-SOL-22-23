@@ -22,9 +22,10 @@
 #define QUEUE_SIZE_DEFAULT 8
 #define DELAY_DEFAULT 0
 
-typedef struct{
-    bool*termina;
-    sigset_t*set;
+typedef struct s{
+    int * stop;         //condizione di terminazione del while del masterthread;
+    sigset_t * set;     // set dei segnali da gestire mascherati
+    int signal_pipe;    //descrittore di scrittura di una pipe senza nome usato per comunicare al collector che è terminata l'esecuzione
 }sigHarg;
 
 /**

@@ -107,7 +107,7 @@ void runMasterThread(int argc,string argv[]){
         runCollector(dim);
     }else{
         if(process_id<0){
-            fprintf(stderr, "Errore fatale riga 110 Masterthread.c process_id=%d\n", process_id);
+            fprintf(stderr, "Errore fatale riga 110 Masterthread.c la fork ha ritornato un id negativo process_id=%d\n", process_id);
             free(tmp);
             free(d_directoryName);
             exit(EXIT_FAILURE);
@@ -213,7 +213,7 @@ void runMasterThread(int argc,string argv[]){
             for(int y=0; y<dim; y++){
                 free(argarray[i]);
             }free(argarray);
-            }
+        }
     }
 }
 
@@ -277,29 +277,24 @@ int isFile(const string filePath){
 
 
 static void* sigHandlerTask (void*arg){
-    sigset_t*set =((sigHarg*)arg)->set;
+    sigHarg * sArg = (sigHarg*)arg;
 
     while (true){
         int sig;
         int r;
-        if(r=sigwait(set,&sig)!=0){
+        if(r=sigwait(sArg->set,&sig)!=0){
             errno=r;
             perror("Fatal Error sigwait.");
             exit(EXIT_FAILURE);
         }
         switch (sig){
             case SIGINT:
-                fprintf(stdout, "Catturato segnale SIGINT\n");
-                *(((sigHarg*)arg)->termina) =true; //passo al thread l'indirizzo del bool che mi controlla il ciclo while 
-                return NULL;
             case SIGHUP:
-                fprintf(stdout, "Catturato segnale SIGHUP\n");
-                *(((sigHarg*)arg)->termina) =true;
-                return NULL;
             case SIGTERM:
-                fprintf(stdout, "Catturato segnale SIGTERM\n");
-                *(((sigHarg*)arg)->termina) =true;
-                return NULL;
+            SIG_PRINT(sig);
+            close(sArg->signal_pipe); //notifico la ricezione del segnale al Collector;
+            *(sArg->stop)=1;
+            return NULL;          
             case SIGUSR1:
                 //stabilisco una connessione con il collector per dirgli di stampare i risultati ottenuti fino ad adesso
                 struct sockaddr_un a;

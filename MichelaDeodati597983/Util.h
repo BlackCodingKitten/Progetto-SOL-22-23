@@ -53,6 +53,25 @@ typedef char* string;
         exit(EXIT_FAILURE);\
     }\
 
+#define SIG_PRINT(sig)\
+    fprintf(stdout, "catturato segnale ");\
+    switch (sig)\
+    {\
+    case 2:\
+        //SIGINT
+        printf("SIGINT\n");\
+        break;\
+    case 1:\
+        //SIGHUP
+        printf("SIGHUP\n");\
+        break;\
+        case 2:\
+        //SIGTERM
+        printf("SIGTERM\n");\
+        break;\
+    }\
+
+
 #define REMOVE_SOCKET()\
    if(unlink(SOCKET_NAME)==0){\
         frpintf(stdout,"Socket %s successfully removed.\n",SOCKET_NAME);\

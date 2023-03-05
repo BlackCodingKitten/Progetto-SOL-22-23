@@ -25,78 +25,50 @@
 #include <signal.h>
 
 void runCollector (int numFile){
+    int currentDataNumber=0;
     Data dataArray[numFile];
+    //inizializzo l'array di file da stampare
     for(int i=0; i<numFile; i++){
+        //inizializzo il valore di tutti i filevalue
         dataArray[i].fileValue=0;
         //alloco la stringa che contiene la path
-        dataArray[i].filePath=malloc(sizeof(char)*UNIX_PATH_MAX);
+        dataArray[i].filePath=malloc(sizeof(char)*PATH_LEN);
     }
+    //creo la listensocket;
     struct sockaddr_un addr;
     strncpy(addr.sun_path,SOCKET_NAME,UNIX_PATH_MAX);
     addr.sun_family = AF_UNIX;
+    int listenSocket;
     
     if((listenSocket=socket(AF_UNIX,SOCK_STREAM,0))==-1){
         perror("listenSocket=socket(AF_UNIX,SOCK_STREAM,0)");
         REMOVE_SOCKET();
         exit(EXIT_FAILURE);
     }
-
+    //bind della listen socket
     if(bind(listenSocket,(struct sockaddr*)&addr, sizeof(addr))!=0){
         perror("bind(farm.sck)");
-        goto _uscita_errore;
+            CLOSE_SOCKET(listenSocket);
+            REMOVE_SOCKET();
+            exit(EXIT_FAILURE);
     }
-
+    //listen socket in ascolto
     if(listen(listenSocket, SOMAXCONN)==-1){
         perror("listen()");
-        goto _uscita_errore;
+            CLOSE_SOCKET(listenSocket);
+            REMOVE_SOCKET();
+            exit(EXIT_FAILURE);
     }
-    //inizializzo l'array di file da stampare
     
-    //collector in ascolto
-    for(int i=0; i<numFile; i++){
-        int connfd;
-        if((connfd=accept(listenSocket,NULL,NULL))== -1){
-            perror("accept()");
-            goto _uscita_errore;
-        }
-        string buffer =malloc(sizeof(char)*FILE_BUFFER_SIZE);
-        if(readn(connfd,buffer,FILE_BUFFER_SIZE)==-1){
-            perror("read(fileValue)");
-            goto _uscita_errore;
-        }
-        if(strstr(buffer,"STAMPA")){
-            //se ho ricevuto il segnale di stampa 
-            i--; // nonsto leggendo un file quindi decremento il contatore
-            stampaRisultati(dataArray,numFile);
-            memset(buffer, '\0', FILE_BUFFER_SIZE);
-            continue;
-        }
-        //la prima cosa che legge è il valore del calcolo quindi devo rifare la cnversione da stringa a long
-        string e=NULL;
-        long v = strtol(buffer,&e,0);
-        if(e==(char)0 && e!=NULL){
-            dataArray[i].fileValue=v;
-        }
-        //adesso leggo la path del file completa
-        if(readn(connfd,dataArray[i].filePath,UNIX_PATH_MAX)==-1){
-            perror("read(filepath)");
-            goto _uscita_errore;
-        }
-    }
-    //ho inserito tutti i file ed è andato tutto liscio quindi ordino l'array di elementi per stampare
-    qsort(dataArray,numFile,sizeof(Data),compare);
-    //stampo e chiudo la connessione
-    for(int i=0; i<numFile; i++){
-        fprintf(stdout,"%ld\t%s\n", dataArray[i].fileValue,dataArray[i].filePath);
-    }
+    //il collector si mette in ascolto dei client che gestisce con una select in modo che quando 
+    //arriva un segnale di terminazione o il segnale di 
+    //stampa lui sa quello che deve fare leggeno il file descriptor della pipe che gli viene passata come argomento dal masthreThread
+    
+
     CLOSE_SOCKET(listenSocket);
     REMOVE_SOCKET();
     fprintf(stdout, "Collector end.");
-
-    _uscita_errore:
-        CLOSE_SOCKET(listenSocket);
-        REMOVE_SOCKET();
-        exit(EXIT_FAILURE);
+    exit(EXIT_SUCCESS); //chiudo il processo così si blocca la wait del masterthread che è il processo padre del collector
 }
 
 /**
@@ -116,6 +88,12 @@ int compare (const void* a, const void *b){
     return strcmp(A.filePath,B.filePath);
 }
 
+/**
+ * @brief stampa i risultati ottenuti dai file 
+ * 
+ * @param a array di filevalue e indirizzi 
+ * @param dim dimensione dell'array
+ */
 void stampaRisultati (Data * a, int dim){
     qsort(a,dim,sizeof(Data), compare);
     for(int i=0; i<dim; i++){
