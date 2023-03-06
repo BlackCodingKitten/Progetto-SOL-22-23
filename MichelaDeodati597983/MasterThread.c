@@ -295,13 +295,15 @@ void runMasterThread(int argc,string argv[]){
             //distruggo la threadpool ma aspetto che siano completate le task pendenti
             destroyWorkerpool(wpool,false);
             //aspetto che termini il collector
-            
-
+            waitpid(process_id,NULL,0);
+            //libero la memoria
             for(int y=0; y<dim; y++){
                 free(argarray[i]);
             }free(argarray);
+            unlink(SOCKET_NAME);
         }
-    }
+    }//END Else della fork
+    
 }
 
 /**
