@@ -8,7 +8,7 @@
  * 
  */
 #ifndef WORKER_POOL_H_
-#define wORKER_POOL_H_
+#define WORKER_POOL_H_
 
 #include <pthread.h>
 #include <stdbool.h>

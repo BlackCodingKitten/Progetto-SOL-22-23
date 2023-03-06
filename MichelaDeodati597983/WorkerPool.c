@@ -315,7 +315,7 @@ void leggieSomma (void*arg){
     if(file==NULL){
         perror(file);
         fprintf(stderr, "Errore apertura file:%s\n",filePath);
-        //----------------------------------------------------------
+        pthread_exit(NULL);
     }
     long fileDim=getFileSize(file)/ sizeof(long); //ricavo quanti numeri ci sono nel file
     //alloco un array in cui inserisco tutti i valori
@@ -326,7 +326,8 @@ void leggieSomma (void*arg){
     //sommo il prodotto del valore per l'indice
     for(int i=0; i<fileDim; i++){
         somma=somma+(fileArray[i]*i);
-    }
+    }free(fileArray);
+    
     //alloco il buffer per scrivere
     string buffer = malloc(sizeof(char)*FILE_BUFFER_SIZE);
     memeset(buffer,'\0',FILE_BUFFER_SIZE);
