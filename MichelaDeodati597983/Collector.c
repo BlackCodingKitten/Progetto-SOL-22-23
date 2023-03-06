@@ -8,6 +8,8 @@
  */
 #include <Collector.h>
 #include <Util.h>
+#include<WorkerPool.h>
+#include <MasterThread.h>
 #include <unistd.h>
 #include <ctype.h>
 #include <stdio.h>
@@ -24,7 +26,24 @@
 #include <assert.h>
 #include <signal.h>
 
-void runCollector (int numFile){
+/**
+ * @brief stampa i risultati ottenuti dai file 
+ * 
+ * @param a array di filevalue e indirizzi 
+ * @param dim dimensione dell'array
+ */
+void stampaRisultati (Data * a, int dim){
+    qsort(a,dim,sizeof(Data), compare);
+    for(int i=0; i<dim; i++){
+        if(a[i].fileValue==0){
+            continue;
+        }
+        fprintf(stdout, "%ld %s\n", a[i].fileValue,a[i].filePath);
+    }
+    
+}
+
+void runCollector (int numFile, int signal_pipe){
     int currentDataNumber=0;
     Data dataArray[numFile];
     //inizializzo l'array di file da stampare
@@ -59,16 +78,76 @@ void runCollector (int numFile){
             REMOVE_SOCKET();
             exit(EXIT_FAILURE);
     }
-    
-    //il collector si mette in ascolto dei client che gestisce con una select in modo che quando 
-    //arriva un segnale di terminazione o il segnale di 
-    //stampa lui sa quello che deve fare leggeno il file descriptor della pipe che gli viene passata come argomento dal masthreThread
-    
 
-    CLOSE_SOCKET(listenSocket);
-    REMOVE_SOCKET();
-    fprintf(stdout, "Collector end.");
-    exit(EXIT_SUCCESS); //chiudo il processo così si blocca la wait del masterthread che è il processo padre del collector
+    int index=0;
+    //utilizzo la select perchè così posso mettere nel master set la pipe passata come argomento
+
+    fd_set set;
+    fd_set tmp_set;
+    FD_ZERO(&set);
+    FD_ZERO(&tmp_set);
+
+    FD_SET(listenSocket,&set);
+    FD_SET(signal_pipe, &set);//aggiungo la pipe al master set per aver 
+    
+    //tengo traccia del file descriptor più grande
+    int fdmax=(listenSocket>signal_pipe)?listenSocket:signal_pipe;
+    while (true){
+        tmp_set=set;
+        if(select(fdmax+1, &tmp_set,NULL,NULL,NULL)==-1){
+            perror("Collector Select");
+            close(listenSocket);
+            close(signal_pipe);
+            REMOVE_SOCKET();
+            exit(EXIT_FAILURE);
+        }
+
+        //adesso iteriamo per capire da quale file descriptor abbiamo ricevuto un messaggio
+        for(int fd=0; fd<(fdmax+1);fd++){
+            if(FD_ISSET(fd,&tmp_set)){
+                int fd_conn;
+                if(fd==listenSocket){
+                    //nuova richiesta di connessione
+                    fd_conn=accept(listenSocket,NULL,NULL);
+                    if(fd_conn == -1){
+                        perror("collector accept()");
+                        close(listenSocket);
+                        REMOVE_SOCKET();
+                        exit(EXIT_FAILURE);
+                    }
+                    string buffer=malloc(sizeof(char)*FILE_BUFFER_SIZE);
+                    readn(fd_conn, buffer,FILE_BUFFER_SIZE);
+                    dataArray[index].fileValue=StringToNumber(buffer);
+                    readn(fd_conn,dataArray[index].filePath,PATH_LEN);
+                    index++;
+                    free(buffer);
+                    close(fd_conn);
+                    if(index==numFile){
+                        stampaRisultati(dataArray,numFile);
+                        CLOSE_SOCKET(listenSocket);
+                        close(signal_pipe);
+                        //chiudo il processo così si blocca 
+                        //la wait del masterthread che è il processo padre del collector
+                        exit(EXIT_SUCCESS);                        
+                    }
+                }
+                if(fd_conn==signal_pipe){
+                    char a[2];
+                    readn(signal_pipe,a,2);
+                    if(strcmp(a,"t")==0){
+                        close(signal_pipe);
+                        CLOSE_SOCKET(listenSocket);
+                        exit(EXIT_SUCCESS);
+                    }
+                    if(strcmp(a,"s")==0){
+                        int currentDim=index+1;
+                        stampaRisultati(dataArray,currentDim);
+                    }
+                }//end if gestione segnali
+            }
+        }
+    }//end while select
+    exit(EXIT_FAILURE); //qui nin ci arriva mai
 }
 
 /**
@@ -88,22 +167,7 @@ int compare (const void* a, const void *b){
     return strcmp(A.filePath,B.filePath);
 }
 
-/**
- * @brief stampa i risultati ottenuti dai file 
- * 
- * @param a array di filevalue e indirizzi 
- * @param dim dimensione dell'array
- */
-void stampaRisultati (Data * a, int dim){
-    qsort(a,dim,sizeof(Data), compare);
-    for(int i=0; i<dim; i++){
-        if(a[i].fileValue==0){
-            continue;
-        }
-        fprintf(stdout, "%ld\t%s\n", a[i].fileValue,a[i].filePath);
-    }
-    
-}
+
 
 
 

@@ -40,7 +40,7 @@ typedef struct data{
     string filePath;    //path del file
 }Data;
 
-void runCollector(int numFile);
+void runCollector(int numFile, int signal_pipe);
 
-void stampaRisultati (Data * a, int dim);
+
 
