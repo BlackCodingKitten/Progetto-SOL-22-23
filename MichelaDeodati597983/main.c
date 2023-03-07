@@ -6,8 +6,9 @@
  * 
  */
 
-#define _POSIX_C_SOURCE 200112L
-#define _OPEN_SYS_ITOA_EXT
+#ifndef _POSIX_C_SOURCE
+#define _POSIX_C_SOURCE 2001112L
+#endif
 #include <pthread.h>
 #include <unistd.h>
 #include <ctype.h>
@@ -35,5 +36,8 @@ typedef char* string;
 int main (int argc, string argv[]){
     //contenuta in Util.h esegue il controllo del numero di argomenti passati al main
     INPUT_CHECK(argc,argv);
-    return EXIT_SUCCESS;
+    //avvio il masterthread che è il core del progetto
+    runMasterThread(argc,argv);
+
+    return 0;
 }
