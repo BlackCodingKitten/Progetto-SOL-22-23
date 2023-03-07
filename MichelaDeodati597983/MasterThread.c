@@ -1,5 +1,4 @@
-#define _POSIX_C_SOURCE 2001112L
-#define _OPEN_SYS_ITOA_EXT
+
 /**
  * @file MasterThread.c
  * @author Michela Deodati 597983
@@ -9,7 +8,9 @@
  * 
  * 
  */
-
+#ifndef _POSIX_C_SOURCE
+#define _POSIX_C_SOURCE 2001112L
+#endif
 #include <pthread.h>
 #include <unistd.h>
 #include <ctype.h>
@@ -29,10 +30,113 @@
 #include <sys/un.h>
 #include <signal.h>
 
-#include <MasterThread.h>
-#include <WorkerPool.h>
-#include <Util.h>
-#include <Collector.h>
+#include "./WorkerPool.h"
+#include "./Collector.h"
+#define NTHREAD_DEFAULT 4
+#define QUEUE_SIZE_DEFAULT 8
+#define DELAY_DEFAULT 0
+
+
+
+typedef struct s{
+    int * stop;         //condizione di terminazione del while del masterthread;
+    sigset_t set;     // set dei segnali da gestire mascherati
+    int signal_pipe;    //descrittore di scrittura di una pipe senza nome usato per comunicare al collector che è terminata l'esecuzione
+}sigHarg;
+
+/**
+ * @brief controlla il valore passato all'opzione -n
+ * 
+ * @param nthread 
+ * @return int 
+ */
+int checkNthread(const int nthread){
+    //controllo che il valore di nthread passato al main sia >0;
+    return ((nthread>0)? nthread : NTHREAD_DEFAULT);
+}
+
+/**
+ * @brief controlla il valore passato all'opzione -q
+ * 
+ * @param qsize 
+ * @return int 
+ */
+int checkqSize (const int qsize){
+    //controllo che il valore della lunghezza della coda condivisa sia >0
+    return((qsize>0)? qsize:QUEUE_SIZE_DEFAULT);
+}
+
+/**
+ * @brief controlla il valore passato all'opzione -t
+ * 
+ * @param time 
+ * @return int 
+ */
+int checkDelay (const int time){
+    //controllo che il delay specificato sia >=0
+    return((time>0)? time: DELAY_DEFAULT);
+}
+
+/**
+ * @brief controlla che il file che gli viene passato sia un regular file
+ * 
+ * @param filePath 
+ * @return int 
+ */
+int isFile(const string filePath){
+    struct stat path_stat;
+    string tmp =malloc(sizeof(char)*strlen(filePath)+3);
+    memset(tmp, '\0', strlen(filePath)+3);
+    strcpy(tmp, "./");
+    strcat(tmp, filePath);
+    if(stat(tmp,&path_stat)!=0){
+        perror("stat");
+        return 0;
+    }
+    if(S_ISREG(path_stat.st_mode)){
+        //controllo anche che sia il tipo di file corretto che i miei thread possono leggere
+        if(strstr(filePath,".dat") && strstr(filePath, "file")){
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/**
+ * @brief task del thread signal handler che gestisce i segnali di terminazione e i segnali di stampa 
+ * invia un messaggio sulla pipe passata come argomento per comunicare al collector la terminazione o 
+ * che deve stampare
+ * 
+ * @param arg 
+ * @return void* 
+ */
+static void* sigHandlerTask (void*arg){
+    sigHarg sArg = *(sigHarg*)arg;
+
+    while (true){
+        int sig;
+        if(sigwait(&(sArg.set),&sig)==-1){
+            errno=EINVAL;
+            perror("Fatal Error sigwait.");
+            exit(EXIT_FAILURE);
+        }
+        switch (sig){
+            case SIGINT:
+            case SIGHUP:
+            case SIGTERM:
+            write(sArg.signal_pipe,"t", 2);
+            close(sArg.signal_pipe); //notifico la ricezione del segnale al Collector;
+            *(sArg.stop)=1;
+            return NULL;          
+            case SIGUSR1:
+                //invio al collector il segnale di stampa
+                write(sArg.signal_pipe, "s", 2);
+        }
+    }
+    return NULL;
+
+}
+
 
 /**
  * @brief salva nell'array di stringhe tutti i file che trova
@@ -127,7 +231,7 @@ void runMasterThread(int argc,string argv[]){
     int n_nthread = NTHREAD_DEFAULT;
     int q_queueLen= QUEUE_SIZE_DEFAULT;
     int t_delay= DELAY_DEFAULT;
-    string d_directoryName =(string)malloc(sizeof(char)*PATH_LEN);
+    string d_directoryName = NULL;
 
 
    
@@ -163,6 +267,7 @@ void runMasterThread(int argc,string argv[]){
         fileIndex+=2;
             //printf("DIRECTORY: %s\n", optarg);        
             //dentro optarg ho il nome della cartella quindi:
+            d_directoryName =(string)malloc(sizeof(char)*PATH_LEN);
             memset(d_directoryName, '\0', PATH_LEN);
             strcpy(d_directoryName,optarg);
         default:
@@ -171,19 +276,23 @@ void runMasterThread(int argc,string argv[]){
             break;
         }
     }//end while optarg
-
-    //alloco una stringa temporanea per salvare i file trovati nella cartella 
-    string*tmp=(string)malloc(sizeof(string)*20);
-    for(int i=0; i<20; i++){
-        tmp[i]=NULL;
-    }
-    //cerco e salvo i file nella cartella
-    findFileDir(d_directoryName,tmp,0);
     int x=0;
-    for(;tmp[x]!=NULL;){
-        //conto quanti file ci sono
-        ++x;
+    string*tmp=NULL;
+    if(d_directoryName!=NULL){
+        //alloco una stringa temporanea per salvare i file trovati nella cartella 
+        tmp=(string*)malloc(sizeof(string)*20);
+        for(int i=0; i<20; i++){
+            tmp[i]=NULL;
+        }
+        //cerco e salvo i file nella cartella
+        findFileDir(d_directoryName,tmp,0);
+        
+        for(;tmp[x]!=NULL;){
+            //conto quanti file ci sono
+            ++x;
+        }
     }
+
 
     //creo la pipe che mi permette di segnalare al collector che sto terminando o per dirgli di stamapare
     int s_pipe[2];
@@ -203,11 +312,13 @@ void runMasterThread(int argc,string argv[]){
         if(process_id<0){
             fprintf(stderr, "Errore fatale riga 110 Masterthread.c la fork ha ritornato un id negativo process_id=%d\n", process_id);
             free(tmp);
-            free(d_directoryName);
+            if(d_directoryName){
+                free(d_directoryName);
+            }
+            
             exit(EXIT_FAILURE);
         }else{
             //process_id>0 //processo padre
-
             // gestisco il signal handler
             sigset_t mask;
             sigemptyset(&mask);
@@ -222,7 +333,7 @@ void runMasterThread(int argc,string argv[]){
             }
             pthread_t sigHandler;
             sigHarg argument = {&stop, mask, s_pipe[1]};
-            if (pthread_create(&sigHandler, NULL, &sigHandlerTask, (void *)&stop))
+            if (pthread_create(&sigHandler, NULL, sigHandlerTask, (void *)&stop))
             {
                 fprintf(stderr, "errore nella creazione del sighandler\n");
                 exit(EXIT_FAILURE);
@@ -238,16 +349,20 @@ void runMasterThread(int argc,string argv[]){
                 ++fileIndex;
             }
             //inserisco anche i file che ho trovato nella cartella passata
-            for(int k=0;k<x;k++){
-                argarray[i]=malloc(sizeof(char)*PATH_LEN);
-                memset(argarray[i],'\0', PATH_LEN);
-                strcpy(argarray[i], tmp[k]);
-                free(tmp[i]);
-                ++i;
+            if(x!=0){
+                for(int k=0;k<x;k++){
+                    argarray[i]=malloc(sizeof(char)*PATH_LEN);
+                    memset(argarray[i],'\0', PATH_LEN);
+                    strcpy(argarray[i], tmp[k]);
+                    free(tmp[i]);
+                    ++i;
+                }
+                free(tmp);
+                free(d_directoryName);
             }
+
             //libero lo spazio di tmp e dirName
-            free(tmp);
-            free(d_directoryName);
+
             //ignoro il segnale sigpipe per evitare di essere terminato da una scrittura su socket
             struct sigaction s;
             memset(&s,0,sizeof(s));
@@ -283,7 +398,7 @@ void runMasterThread(int argc,string argv[]){
                 }else{
                     if(check==1){
                         //coda piena
-                        fprint(stderr, "Coda delle task piena");
+                        fprintf(stderr, "Coda delle task piena");
                         //non incremento l'indice e riprovo al giro successivo //non aspetto nemmeno i secondi;
                         continue;
                     }else{
@@ -304,98 +419,4 @@ void runMasterThread(int argc,string argv[]){
         }
     }//END Else della fork
     
-}
-
-/**
- * @brief controlla il valore passato all'opzione -n
- * 
- * @param nthread 
- * @return int 
- */
-int checkNthread(const int nthread){
-    //controllo che il valore di nthread passato al main sia >0;
-    return ((nthread>0)? nthread : NTHREAD_DEFAULT);
-}
-
-/**
- * @brief controlla il valore passato all'opzione -q
- * 
- * @param qsize 
- * @return int 
- */
-int checkqSize (const int qsize){
-    //controllo che il valore della lunghezza della coda condivisa sia >0
-    return((qsize>0)? qsize:QUEUE_SIZE_DEFAULT);
-}
-
-/**
- * @brief controlla il valore passato all'opzione -t
- * 
- * @param time 
- * @return int 
- */
-int checkDelay (const int time){
-    //controllo che il delay specificato sia >=0
-    if((time>0)? time: DELAY_DEFAULT);
-}
-
-/**
- * @brief controlla che il file che gli viene passato sia un regular file
- * 
- * @param filePath 
- * @return int 
- */
-int isFile(const string filePath){
-    struct stat path_stat;
-    string tmp =malloc(sizeof(char)*strlen(filePath)+3);
-    memset(tmp, '\0', strlen(filePath)+3);
-    strcpy(tmp, "./");
-    strcat(tmp, filePath);
-    if(stat(tmp,&path_stat)!=0){
-        perror("stat");
-        return 0;
-    }
-    if(S_ISREG(path_stat.st_mode)){
-        //controllo anche che sia il tipo di file corretto che i miei thread possono leggere
-        if(strstr(filePath,".dat") && strstr(filePath, "file")){
-            return 1;
-        }
-    }
-    return 0;
-}
-
-/**
- * @brief task del thread signal handler che gestisce i segnali di terminazione e i segnali di stampa 
- * invia un messaggio sulla pipe passata come argomento per comunicare al collector la terminazione o 
- * che deve stampare
- * 
- * @param arg 
- * @return void* 
- */
-static void* sigHandlerTask (void*arg){
-    sigHarg sArg = *(sigHarg*)arg;
-
-    while (true){
-        int sig;
-        int r;
-        if(r=sigwait(&(sArg.set),&sig)!=0){
-            errno=r;
-            perror("Fatal Error sigwait.");
-            exit(EXIT_FAILURE);
-        }
-        switch (sig){
-            case SIGINT:
-            case SIGHUP:
-            case SIGTERM:
-            write(sArg.signal_pipe,"t", 2);
-            close(sArg.signal_pipe); //notifico la ricezione del segnale al Collector;
-            *(sArg.stop)=1;
-            return NULL;          
-            case SIGUSR1:
-                //invio al collector il segnale di stampa
-                write(sArg.signal_pipe, "s", 2);
-        }
-    }
-    return NULL;
-
 }
