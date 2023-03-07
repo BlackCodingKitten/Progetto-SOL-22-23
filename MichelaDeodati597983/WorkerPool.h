@@ -1,3 +1,6 @@
+#ifndef _POSIX_C_SOURCE
+#define _POSIX_C_SOURCE 2001112L
+#endif
 /**
  * @file WorkerPool.h
  * @author Michela Deodati 597983
@@ -12,7 +15,9 @@
 
 #include <pthread.h>
 #include <stdbool.h>
-#include <Util.h>
+
+#include "./Util.h"
+
 
 
 /**

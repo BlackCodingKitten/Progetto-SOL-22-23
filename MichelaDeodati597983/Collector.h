@@ -1,4 +1,6 @@
+#ifndef _POSIX_C_SOURCE
 #define _POSIX_C_SOURCE 2001112L
+#endif
 /**
  * @file Collector.h
  * @author Michela Deodati 597983
@@ -7,8 +9,7 @@
  * @date 15-03-22
  * 
  */
-#define _POSIX_C_SOURCE 200112L
-#define _OPEN_SYS_ITOA_EXT
+
 #include <unistd.h>
 #include <ctype.h>
 #include <stdio.h>
@@ -25,7 +26,8 @@
 #include <assert.h>
 #include <signal.h>
 
-#include <Util.h>
+#include "./Util.h"
+
 /**
  * @brief socket su cui il Collector si mette in ascolto
  * 

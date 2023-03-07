@@ -1,4 +1,6 @@
+#ifndef _POSIX_C_SOURCE
 #define _POSIX_C_SOURCE 2001112L
+#endif
 /**
  * @file Util.h
  * @author Michela Deodati 597983
@@ -55,13 +57,13 @@ typedef char* string;
 
 #define REMOVE_SOCKET()\
    if(unlink(SOCKET_NAME)==0){\
-        frpintf(stdout,"Socket %s successfully removed.\n",SOCKET_NAME);\
+        fprintf(stdout,"Socket %s successfully removed.\n",SOCKET_NAME);\
    }else{\
     if(errno==ENOENT){\
         fprintf(stderr, "Socket %s doesn't exist.\n", SOCKET_NAME);\
     }else{\
         perror("unlink(farm.sck)");\
-    }\    
+    }\
    }\
 
 #define CLOSE_SOCKET(fd_socket)\
@@ -145,7 +147,7 @@ static inline int StringToNumber (const string s){
     }
     string e=NULL;
     int val =(int)strtol(s,&e,0);
-    if(e!=NULL && e==(char)0){
+    if(e!=NULL && *e==(char)0){
         return val; //successo
     }
     return -1; //fallimento

@@ -1,4 +1,6 @@
+#ifndef _POSIX_C_SOURCE
 #define _POSIX_C_SOURCE 2001112L
+#endif
 /**
  * @file Collector.c
  * @author Michela Deodati 597983
@@ -6,10 +8,7 @@
  * @date 15-03-2023
  * 
  */
-#include <Collector.h>
-#include <Util.h>
-#include<WorkerPool.h>
-#include <MasterThread.h>
+
 #include <unistd.h>
 #include <ctype.h>
 #include <stdio.h>
@@ -21,10 +20,33 @@
 #include <sys/wait.h>
 #include <string.h>
 #include <sys/socket.h>
+#include <sys/select.h>
 #include <sys/types.h>
 #include <sys/un.h>
 #include <assert.h>
 #include <signal.h>
+
+
+#include "./Util.h"
+#include "./Collector.h"
+
+/**
+ * @brief funzione compare per il qsort per ordinare l'array prima della stampa
+ * 
+ * @param a 
+ * @param b 
+ * @return int 
+ */
+int compare (const void* a, const void *b){
+    Data A = *(Data*)a;
+    Data B =*(Data*)b;
+    if(A.fileValue-B.fileValue!=0){
+        return A.fileValue-B.fileValue;
+    }
+    //se a e B hanno lo stesso valore i file vengono ordinati in ordine alfabetico
+    return strcmp(A.filePath,B.filePath);
+}
+
 
 /**
  * @brief stampa i risultati ottenuti dai file 
@@ -44,7 +66,6 @@ void stampaRisultati (Data * a, int dim){
 }
 
 void runCollector (int numFile, int signal_pipe){
-    int currentDataNumber=0;
     Data dataArray[numFile];
     //inizializzo l'array di file da stampare
     for(int i=0; i<numFile; i++){
@@ -150,22 +171,6 @@ void runCollector (int numFile, int signal_pipe){
     exit(EXIT_FAILURE); //qui nin ci arriva mai
 }
 
-/**
- * @brief funzione compare per il qsort per ordinare l'array prima della stampa
- * 
- * @param a 
- * @param b 
- * @return int 
- */
-int compare (const void* a, const void *b){
-    Data A = *(Data*)a;
-    Data B =*(Data*)b;
-    if(A.fileValue-B.fileValue!=0){
-        return A.fileValue-B.fileValue;
-    }
-    //se a e B hanno lo stesso valore i file vengono ordinati in ordine alfabetico
-    return strcmp(A.filePath,B.filePath);
-}
 
 
 

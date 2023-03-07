@@ -1,4 +1,6 @@
+#ifndef _POSIX_C_SOURCE
 #define _POSIX_C_SOURCE 2001112L
+#endif
 /**
  * @file WorkerPool.c
  * @author Michela Deodati 597983
@@ -17,15 +19,30 @@
 #include <string.h>
 #include <ctype.h>
 #include <assert.h>
-#include <WorkerPool.h> 
 #include <stdbool.h>
-#include <Util.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <sys/un.h>
 
+#include "./WorkerPool.h"
+#include "./Util.h"
 
+/**
+ * @brief ricavare la dimensione in byte del file 
+ * 
+ * @param file nome del file
+ * @return long 
+ */
+long getFileSize(FILE *file) {
+    long size;
+
+    fseek(file, 0, SEEK_END);  // si posiziona alla fine del file
+    size = ftell(file);        // legge la posizione attuale nel file, che corrisponde alla sua dimensione in byte
+    fseek(file, 0, SEEK_SET);  // si riporta all'inizio del file
+
+    return size;
+}
 
 /**
  * @function: wpoolWorker
@@ -172,6 +189,23 @@ workerpool_t * createWorkerpool (int numWorkers, int pendingSize){
     return wpool;
 }
 
+/**
+ * @function freeWorkPool
+ * @brief libera le risorse della workerpool
+ * 
+ * @param wpool: threadpool di worker
+ */
+static void freeWorkPool(workerpool_t* wpool){
+    if(wpool->workers!=NULL){
+        free(wpool->workers);
+        free(wpool->pendingQueue);
+
+        pthread_mutex_destroy(&(wpool->lock));
+        pthread_cond_destroy(&(wpool->cond));
+    }
+    free(wpool);
+}
+
 bool destroyWorkerpool (workerpool_t* wpool, bool forcedExit){
     if(wpool==NULL){
         errno = EINVAL;
@@ -210,24 +244,6 @@ bool destroyWorkerpool (workerpool_t* wpool, bool forcedExit){
     return true;
 }
 
-/**
- * @function freeWorkPool
- * @brief libera le risorse della workerpool
- * 
- * @param wpool: threadpool di worker
- */
-static void freeWorkPool(workerpool_t* wpool){
-    if(wpool->workers!=NULL){
-        free(wpool->workers);
-        free(wpool->pendingQueue);
-
-        pthread_mutex_destroy(&(wpool->lock));
-        pthread_cond_destroy(&(wpool->cond));
-    }
-    free(wpool);
-}
-
-
 int addToWorkerpool (workerpool_t* wpool, void(*task)(void*), void*arg){
     //controllo che la task non sia NULL e che la wpool non sia NULL
     if(wpool==NULL || task==NULL){
@@ -244,7 +260,12 @@ int addToWorkerpool (workerpool_t* wpool, void(*task)(void*), void*arg){
 
     int qSize=abs(wpool->queueSize);
     //bool : dobbiamo gestire le task pendenti? se è == -1 non vanno gestite quindi no pending diventa false
-    bool noPending = (wpool->pendingQueue)==-1;
+    bool noPending;
+    if((wpool->queueSize)==-1){
+        noPending=true;
+    }else{
+        noPending=false;
+    }
 
     //controllo se la coda è piena o se si è in fase di uscita:
     if(wpool->pendingQueueCount >= qSize || wpool->exiting){
@@ -290,7 +311,7 @@ int addToWorkerpool (workerpool_t* wpool, void(*task)(void*), void*arg){
     }
 
     //se ho aggiunto correttamente il thread rilascio la lock e return 0
-    if(pthread_unlock_mutex(&(wpool->lock))!=0){
+    if(pthread_mutex_unlock(&(wpool->lock))!=0){
         fprintf(stderr, "Errore unlock riga 292 Workerpool.c\n");
         return -1;
     }
@@ -308,12 +329,12 @@ void leggieSomma (void*arg){
         perror("socket()");
         exit(EXIT_FAILURE);
     }
-    string filePath = *(string)arg;
+    string filePath = *(string*)arg;
     long somma = 0;
     //apro il file in modalità lettura binaria
-    FILE*file=fopen(filePath,'rb');
+    FILE*file=fopen(filePath,"rb");
     if(file==NULL){
-        perror(file);
+        perror(filePath);
         fprintf(stderr, "Errore apertura file:%s\n",filePath);
         pthread_exit(NULL);
     }
@@ -330,7 +351,7 @@ void leggieSomma (void*arg){
     
     //alloco il buffer per scrivere
     string buffer = malloc(sizeof(char)*FILE_BUFFER_SIZE);
-    memeset(buffer,'\0',FILE_BUFFER_SIZE);
+    memset(buffer,'\0',FILE_BUFFER_SIZE);
     sprintf(buffer, "%ld", somma); //converto il valore della somma in stringa
     //attendo che il collector faccia l'accept
     while(connect(sock, (struct sockaddr*)&addr,sizeof(addr))==-1){
@@ -363,18 +384,3 @@ void leggieSomma (void*arg){
     CLOSE_SOCKET(sock);
 }
 
-/**
- * @brief ricavare la dimensione in byte del file 
- * 
- * @param file nome del file
- * @return long 
- */
-long getFileSize(FILE *file) {
-    long size;
-
-    fseek(file, 0, SEEK_END);  // si posiziona alla fine del file
-    size = ftell(file);        // legge la posizione attuale nel file, che corrisponde alla sua dimensione in byte
-    fseek(file, 0, SEEK_SET);  // si riporta all'inizio del file
-
-    return size;
-}
