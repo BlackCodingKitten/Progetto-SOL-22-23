@@ -126,7 +126,7 @@ void runCollector (int numFile, int signal_pipe){
         //adesso iteriamo per capire da quale file descriptor abbiamo ricevuto un messaggio
         for(int fd=0; fd<(fdmax+1);fd++){
             if(FD_ISSET(fd,&tmp_set)){
-                int fd_conn;
+                int fd_conn=0;
                 if(fd==listenSocket){
                     //nuova richiesta di connessione
                     fd_conn=accept(listenSocket,NULL,NULL);
@@ -140,6 +140,7 @@ void runCollector (int numFile, int signal_pipe){
                     readn(fd_conn, buffer,FILE_BUFFER_SIZE);
                     dataArray[index].fileValue=StringToNumber(buffer);
                     readn(fd_conn,dataArray[index].filePath,PATH_LEN);
+                    printf("DEBUG Collector: risultato del file: %ld, %s\n", dataArray[index].fileValue,dataArray[index].filePath);
                     index++;
                     free(buffer);
                     close(fd_conn);
@@ -154,7 +155,9 @@ void runCollector (int numFile, int signal_pipe){
                 }
                 if(fd_conn==signal_pipe){
                     char a[2];
-                    readn(signal_pipe,a,2);
+                    if(readn(signal_pipe,a,2)==-1){
+                        fprintf(stderr, "COLLECTOR-Collector.c 158: Errore nella lettura del segnale ricevuto dal sig handler");
+                    }
                     if(strcmp(a,"t")==0){
                         close(signal_pipe);
                         CLOSE_SOCKET(listenSocket);

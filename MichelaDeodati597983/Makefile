@@ -1,20 +1,25 @@
 CC				=	gcc
 ARRVS			=	ar rvs
-CFLAG			=	-std=c99 -Wall -Werror -g 
+CFLAG			+=	-std=c99 -Wall -Werror -g -Wextra -O3
 DFLAG			=	-c -o
 INCLUDES		=	-I .
 LDFLAGS			=	-L .
 LIBS			=	-lpthread
 LIBS2 			=	$(LDFLAGS) -lCollector -lWorkerPool
 LIBSMT 			=	$(LDFLAGS) -lCollector -lWorkerPool $(LIBS)
-LIBSMAIN		=	$(LIBS2) -lMasterThread $(LIBS)
+LIBSMAIN		=	$(LIBS2) -lMasterThread $(LIBS) 			
+OBJECT			= 	./Collector.o ./WorkerPool.o ./MasterThread.o
+LIBSA		= 	./libCollector.a ./libMasterThread.a ./libWorkerPool.a
 
-TARGETS         =   farm
+TARGETS         =   farm generafile 
 
-.PHONY: all clean cleanall
+.PHONY: all cleanall 
 .SUFFIXES: .c .h
 
-all:				$(TARGETS)
+all:				$(TARGETS) clean
+
+generafile:		generafile.c
+	$(CC) $(CFLAG) $(INCLUDES) generafile.c -o generafile
 
 farm:				libMasterThread.a main.c 
 	$(CC) $(CFLAG) $(INCLUDES) main.c -o farm $(LIBSMAIN)
@@ -37,8 +42,6 @@ libCollector.a:		Collector.o
 Collector.o:		Collector.c
 	$(CC) $(CFLAG) $(INCLUDES) Collector.c $(DFLAG) Collector.o $(LIBS)
 
-clean:				
-	rm -f $(TARGETS)
-cleanall:	 		clean
-	\rm -f *.o *~ *.a *.dat ./testdir
+clean:	
+	rm -f $(OBJECT) $(LIBSA)
 

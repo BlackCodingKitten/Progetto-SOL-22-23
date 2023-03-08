@@ -55,7 +55,11 @@ typedef struct s{
  */
 int checkNthread(const int nthread){
     //controllo che il valore di nthread passato al main sia >0;
-    return ((nthread>0)? nthread : NTHREAD_DEFAULT);
+    if(nthread>0){
+        return nthread;
+    }else{
+        return NTHREAD_DEFAULT;
+    }
 }
 
 /**
@@ -120,20 +124,25 @@ static void* sigHandlerTask (void*arg){
         int sig;
         if(sigwait(&(sArg.set),&sig)==-1){
             errno=EINVAL;
-            perror("Fatal Error sigwait.");
+            perror("SIGNAL_HANDLER-Masterthread.c-123: errore sigwait");
             exit(EXIT_FAILURE);
         }
         switch (sig){
             case SIGINT:
             case SIGHUP:
             case SIGTERM:
-            write(sArg.signal_pipe,"t", 2);
+            if(writen(sArg.signal_pipe,"t", 2)==-1){
+                fprintf(stderr, "SIGNAL_HANDLER-Masterthread.c-131: errore writen sulla pipe");
+            }
             close(sArg.signal_pipe); //notifico la ricezione del segnale al Collector;
+            //cambio il vlore della guardia del while in masterthread
             *(sArg.stop)=1;
             return NULL;          
             case SIGUSR1:
                 //invio al collector il segnale di stampa
-                write(sArg.signal_pipe, "s", 2);
+                if(writen(sArg.signal_pipe, "s", 2)==-1){
+                    fprintf(stderr, "SIGNAL_HANDLER-Masterthread.c-137: errore writen sulla pipe");
+                }
         }
     }
     return NULL;
@@ -178,8 +187,8 @@ void findFileDir(const char *dirName, char **saveFile, int index)
             string filename = malloc(sizeof(string) * PATH_LEN);
             memset(filename, '\0', PATH_LEN);
             strncpy(filename, dirName, PATH_LEN);
-            strncat(filename, "/", PATH_LEN);
-            strncat(filename, f->d_name, PATH_LEN);
+            strcat(filename, "/");
+            strcat(filename, f->d_name);
             if (stat(filename, &buf) == -1)
             {
                 perror("eseguendo la stat");
@@ -224,51 +233,54 @@ void findFileDir(const char *dirName, char **saveFile, int index)
 }
 
 /**
- * @brief cor del masterthread che esegue tutte le funzioni richieste: controllo dell'input, creazione della workerpool
+ * @brief core del masterthread che esegue tutte le funzioni richieste: controllo dell'input, creazione della workerpool
  * gestione dei segnali, fork per creare il processo figlio collector
  */
 void runMasterThread(int argc,string argv[]){
+    for(int i=0; i<argc; i++){
+        printf("%s\n", argv[i]);
+    }
     //creo la condizione del while per i segnali di stop:
     int stop=1;
     //associo alle variabili della threadpool i valori di default
-    int n_nthread = NTHREAD_DEFAULT;
-    int q_queueLen= QUEUE_SIZE_DEFAULT;
-    int t_delay= DELAY_DEFAULT;
+    int n_nthread = 0;
+    int q_queueLen= 0;
+    int t_delay= 0;
     string d_directoryName = NULL;
-
-
-   
+    
     int fileIndex=1; //tiene traccia dell'indice di argv[] in cui si trovano i file
-    int opt;
+    int opt=0;
     opterr=0;
     int argvalue;
+    printf("DEBUG Masterthread:prima di entrare il getopt\n");
     //getopt per controllare gli argomanti del main
     //inizio la scan degli argomenti del main
     while((opt=getopt(argc, argv, "n:q:d:t:"))!=-1){
+        printf("DEBUG Masterthread: sono dentro getopt\n");
         //switch su opt:
         switch (opt)
         {
         case 'n':
         fileIndex+=2;
-            //printf("NUMERO DI THREAD: %s\n", optarg);
+            printf("NUMERO DI THREAD: %s\n", optarg);
             argvalue=StringToNumber(optarg);
             n_nthread=checkNthread(argvalue);
             break;
         case 'q':
         fileIndex+=2;
-            //printf("LUNGHEZZA DELLA CODA: %s\n", optarg);
+            printf("LUNGHEZZA DELLA CODA: %s\n", optarg);
             argvalue=StringToNumber(optarg);
             q_queueLen=checkqSize(argvalue);
             break;
         case 't':
         fileIndex+=2;
-            //printf("DELAY: %s\n", optarg);
+            printf("DELAY: %s\n", optarg);
             argvalue=StringToNumber(optarg);
             t_delay=checkDelay(argvalue);
             break;
         case 'd':
         fileIndex+=2;
-            //printf("DIRECTORY: %s\n", optarg);        
+            printf("DIRECTORY: %s\n", optarg);        
             //dentro optarg ho il nome della cartella quindi:
             d_directoryName =(string)malloc(sizeof(char)*PATH_LEN);
             memset(d_directoryName, '\0', PATH_LEN);
@@ -279,9 +291,11 @@ void runMasterThread(int argc,string argv[]){
             break;
         }
     }//end while optarg
+    printf("DEBUG MasterThread: sono fuori da getopt\n");
     int x=0;
     string*tmp=NULL;
     if(d_directoryName!=NULL){
+        printf("DEBUG Masterthread: non ho passato nessuna cartella\n");
         //alloco una stringa temporanea per salvare i file trovati nella cartella 
         tmp=(string*)malloc(sizeof(string)*20);
         for(int i=0; i<20; i++){
@@ -296,7 +310,7 @@ void runMasterThread(int argc,string argv[]){
         }
     }
 
-
+    printf("DEBUG Masterthread: creo la pipe per comunicare con il collector tramite il signal handler\n");
     //creo la pipe che mi permette di segnalare al collector che sto terminando o per dirgli di stamapare
     int s_pipe[2];
     if(pipe(s_pipe)==-1){
@@ -314,11 +328,11 @@ void runMasterThread(int argc,string argv[]){
     }else{
         if(process_id<0){
             fprintf(stderr, "Errore fatale riga 110 Masterthread.c la fork ha ritornato un id negativo process_id=%d\n", process_id);
+            REMOVE_SOCKET();
             free(tmp);
             if(d_directoryName){
                 free(d_directoryName);
             }
-            
             exit(EXIT_FAILURE);
         }else{
             //process_id>0 //processo padre
