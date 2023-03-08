@@ -73,10 +73,10 @@ static void * wpoolWorker(void* pool){
         
         if(wpool->exiting && !wpool->waitEndingTask){
             //esco ignorando le task pendenti
-            break;
+            return NULL;
         }
-        if(wpool->exiting && wpool->waitEndingTask){
-            //esco ma ci sono task pendenti da terminare
+        if(wpool->exiting && wpool->waitEndingTask && (wpool->pendingQueueCount==0)){
+            //esco perchè non ci ono più task pendenti 
             break;
         }
         //nuovo task
@@ -101,12 +101,12 @@ static void * wpoolWorker(void* pool){
             return NULL;
         }
         wpool->activeTask--;
-    }    
+    }//end while 
     if(pthread_mutex_unlock(&(wpool->lock))!=0){
         fprintf(stderr, "errore nella unlock da parte del thread:%d\n", self.wpoolIndex);
         return NULL; 
     }
-    fprintf(stderr, "Worker %d in uscita.\n", self.wpoolIndex);
+    //fprintf(stderr, "Worker %d in uscita.\n", self.wpoolIndex);
     return NULL;
 }
 

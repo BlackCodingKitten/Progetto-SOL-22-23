@@ -30,8 +30,11 @@
 #include <sys/un.h>
 #include <signal.h>
 
-#include "./WorkerPool.h"
-#include "./Collector.h"
+#include <Collector.h>
+#include <WorkerPool.h>
+#include "./MasterThread.h"
+
+
 #define NTHREAD_DEFAULT 4
 #define QUEUE_SIZE_DEFAULT 8
 #define DELAY_DEFAULT 0
@@ -333,7 +336,7 @@ void runMasterThread(int argc,string argv[]){
             }
             pthread_t sigHandler;
             sigHarg argument = {&stop, mask, s_pipe[1]};
-            if (pthread_create(&sigHandler, NULL, sigHandlerTask, (void *)&stop))
+            if (pthread_create(&sigHandler, NULL, sigHandlerTask, (void *)&argument))
             {
                 fprintf(stderr, "errore nella creazione del sighandler\n");
                 exit(EXIT_FAILURE);
@@ -398,8 +401,8 @@ void runMasterThread(int argc,string argv[]){
                 }else{
                     if(check==1){
                         //coda piena
-                        fprintf(stderr, "Coda delle task piena");
-                        //non incremento l'indice e riprovo al giro successivo //non aspetto nemmeno i secondi;
+                        //fprintf(stderr, "Coda delle task piena");
+                        //non incremento l'indice e riprovo al giro successivo //non aspetto nemmeno i secondi di delay
                         continue;
                     }else{
                         fprintf(stderr, "FATAL ERROR IN THREADPOOL");

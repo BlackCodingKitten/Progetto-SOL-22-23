@@ -25,13 +25,9 @@
 #include <sys/un.h>
 #include <signal.h>
 
-#include <Util.h>
-#include <WorkerPool.h>
-#include <Collector.h>
-#include <MasterThread.h>
-
-typedef char* string;
-
+#include "./WorkerPool.h"
+#include "./Collector.h"
+#include "./MasterThread.h"
 
 int main (int argc, string argv[]){
     //contenuta in Util.h esegue il controllo del numero di argomenti passati al main
