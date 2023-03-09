@@ -16,7 +16,7 @@ TARGETS         =   farm generafile
 .PHONY: all cleanall 
 .SUFFIXES: .c .h
 
-all:				$(TARGETS) clean
+all:				$(TARGETS) 
 
 generafile:		generafile.c
 	$(CC) $(CFLAG) $(INCLUDES) generafile.c -o generafile
