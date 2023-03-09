@@ -31,8 +31,9 @@ typedef char* string;
 //il LONG_MAX=9,223,372,036,854,775,807 che sono 19 cifre + \0 = 20
 #define FILE_BUFFER_SIZE 20
 #endif
-//definisco il nome ella socket usata per la comunicazione tra collector e workers
+
 #if !defined(SOCKET_NAME)
+//definisco il nome ella socket usata per la comunicazione tra collector e workers
 #define SOCKET_NAME "./farm.sck"
 #endif
 
@@ -43,17 +44,6 @@ typedef char* string;
 #if !defined(PATH_LEN)
 #define PATH_LEN 255
 #endif
-
-/**
- * @brief esegue il controllo dell'input passato al main 
- * @return esce se argc <1 ossia non sono stati passati argomenti al main
- * 
- */
-#define INPUT_CHECK(argc, argv)\
-    if(argc<1){\
-        fprintf(stderr, "Usage %s: 'filename.....'\nOptions:\n\t-n<nthreads>\n\t-q<qsize>\n\t-d<directory name>\n\t-t<delay>\n", argv[0]);\
-        exit(EXIT_FAILURE);\
-    }\
 
 #define REMOVE_SOCKET()\
    if(unlink(SOCKET_NAME)==0){\

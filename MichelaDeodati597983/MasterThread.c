@@ -40,10 +40,13 @@
 #define DELAY_DEFAULT 0
 
 
-
+/**
+ * @brief @struct che rappresenta gli argomenti passare al thread signal handler.
+ * 
+ */
 typedef struct s{
     int * stop;         //condizione di terminazione del while del masterthread;
-    sigset_t set;     // set dei segnali da gestire mascherati
+    sigset_t set;       // set dei segnali da gestire mascherati
     int signal_pipe;    //descrittore di scrittura di una pipe senza nome usato per comunicare al collector che è terminata l'esecuzione
 }sigHarg;
 
@@ -85,7 +88,7 @@ int checkDelay (const int time){
 }
 
 /**
- * @brief controlla che il file che gli viene passato sia un regular file
+ * @brief controlla che il file che gli viene passato sia un regular file e presenti le caratteristiche dei file che possono lggere i miei thread
  * 
  * @param filePath 
  * @return int 
@@ -119,7 +122,7 @@ int isFile(const string filePath){
  */
 static void* sigHandlerTask (void*arg){
     sigHarg sArg = *(sigHarg*)arg;
-
+    printf("DEBUG Masterthread-signal_handler:AVVIO DEL THREAD\n"); fflush(stdout);
     while (true){
         int sig;
         if(sigwait(&(sArg.set),&sig)==-1){
@@ -210,8 +213,14 @@ void findFileDir(const char *dirName, char **saveFile, int index)
                 {
                     saveFile[index] = malloc(sizeof(char) * PATH_LEN);
                     memset(saveFile[index], '\0', PATH_LEN);
-                    strncpy(saveFile[index], filename, PATH_LEN);
-                    ++index;
+                    //salvo il file nell'array solo se è un file regolare e del tipo che i miei thread possono leggere
+                    if(isFile(filename)){
+                        strncpy(saveFile[index], filename, PATH_LEN);
+                        ++index;
+                    }else{
+                        free(saveFile[index]);
+                    }
+
                 }
             }
         }
@@ -234,7 +243,7 @@ void findFileDir(const char *dirName, char **saveFile, int index)
 
 /**
  * @brief core del masterthread che esegue tutte le funzioni richieste: controllo dell'input, creazione della workerpool
- * gestione dei segnali, fork per creare il processo figlio collector
+ * gestione dei segnali, fork per creare il processo figlio collector, terminazione della threadpool
  */
 void runMasterThread(int argc,string argv[]){
     for(int i=0; i<argc; i++){
@@ -243,9 +252,9 @@ void runMasterThread(int argc,string argv[]){
     //creo la condizione del while per i segnali di stop:
     int stop=1;
     //associo alle variabili della threadpool i valori di default
-    int n_nthread = 0;
-    int q_queueLen= 0;
-    int t_delay= 0;
+    int n_nthread = NTHREAD_DEFAULT;
+    int q_queueLen= QUEUE_SIZE_DEFAULT;
+    int t_delay= DELAY_DEFAULT;
     string d_directoryName = NULL;
     
     int fileIndex=1; //tiene traccia dell'indice di argv[] in cui si trovano i file
@@ -267,19 +276,19 @@ void runMasterThread(int argc,string argv[]){
             n_nthread=checkNthread(argvalue);
             break;
         case 'q':
-        fileIndex+=2;
+            fileIndex+=2;
             printf("LUNGHEZZA DELLA CODA: %s\n", optarg);
             argvalue=StringToNumber(optarg);
             q_queueLen=checkqSize(argvalue);
             break;
         case 't':
-        fileIndex+=2;
+            fileIndex+=2;
             printf("DELAY: %s\n", optarg);
             argvalue=StringToNumber(optarg);
             t_delay=checkDelay(argvalue);
             break;
         case 'd':
-        fileIndex+=2;
+            fileIndex+=2;
             printf("DIRECTORY: %s\n", optarg);        
             //dentro optarg ho il nome della cartella quindi:
             d_directoryName =(string)malloc(sizeof(char)*PATH_LEN);
@@ -291,11 +300,21 @@ void runMasterThread(int argc,string argv[]){
             break;
         }
     }//end while optarg
-    printf("DEBUG MasterThread: sono fuori da getopt\n");
+    printf("DEBUG MasterThread: sono fuori da getopt\nDEBUG MasterThread: alloco la pool\n");
+    //creo la threadpool
+    workerpool_t *wpool=NULL;
+    
+    //controllo che nella creazione della threadpool vada tutto bene
+    if((wpool =createWorkerpool(n_nthread,q_queueLen))==NULL){
+        fprintf(stderr, "MASTERTHREAD: Errore fatale nella creazione della workerpool\n");
+        exit(EXIT_FAILURE);
+    }
+    printf("DEBUG Masterthread: Pool allocata Correttamente\n"); fflush(stdout);
+
     int x=0;
     string*tmp=NULL;
-    if(d_directoryName!=NULL){
-        printf("DEBUG Masterthread: non ho passato nessuna cartella\n");
+    if(d_directoryName != NULL){
+        printf("DEBUG Masterthread: ho passato la cartella %s\n", d_directoryName);
         //alloco una stringa temporanea per salvare i file trovati nella cartella 
         tmp=(string*)malloc(sizeof(string)*20);
         for(int i=0; i<20; i++){
@@ -303,9 +322,8 @@ void runMasterThread(int argc,string argv[]){
         }
         //cerco e salvo i file nella cartella
         findFileDir(d_directoryName,tmp,0);
-        
+        //conto quanti file ci sono nella cartella
         for(;tmp[x]!=NULL;){
-            //conto quanti file ci sono
             ++x;
         }
     }
@@ -315,71 +333,98 @@ void runMasterThread(int argc,string argv[]){
     int s_pipe[2];
     if(pipe(s_pipe)==-1){
         perror("pipe()");
+        if(tmp!=NULL){
+            for(int i=0; i<x; i++){
+                free(tmp[i]);
+            }
+            free(tmp);
+        }
         exit(EXIT_FAILURE);
     }
+    
     //calcolo la dimensione del'array che conterrà i nomi dei file jsu cui fare i calcoli
     int dim=(argc-fileIndex)+x;
+    printf("DEBUG Masterthread: calcolo qunti file ci sono da passare ai thread %d\n", dim);
     //faccio partire il processo collector facendo la fork perchè adesso conosco quanti file ho il totale da calcolare
     pid_t process_id=fork();
     if(process_id==0){
-        //fprint(stdout, "Sono il processo collector avviato dal MasterThread");
+        printf("DEBUG MasterThread: Eseguita la fork e sono nel processo Collector\n");
         //avvio il processo collector 
         runCollector(dim,s_pipe[0]);
     }else{
         if(process_id<0){
-            fprintf(stderr, "Errore fatale riga 110 Masterthread.c la fork ha ritornato un id negativo process_id=%d\n", process_id);
+            fprintf(stderr, "MASTERTHREAD: Errore la fork ha ritornato un id negativo process_id=%d\n", process_id);
             REMOVE_SOCKET();
+            if(tmp!=NULL){
+                for(int i=0; i<x; i++){
+                    free(tmp[i]);
+                }
             free(tmp);
-            if(d_directoryName){
+            }
+            if(d_directoryName!=NULL){
                 free(d_directoryName);
             }
             exit(EXIT_FAILURE);
         }else{
-            //process_id>0 //processo padre
-            // gestisco il signal handler
+            fflush(stdout);
+            printf("DEBUG Masterthread: Dopo la fork sono nel processo Masterthread\n");
+            // gestisco il signal handler aggiungendo i segnali da gestire al set
             sigset_t mask;
             sigemptyset(&mask);
             sigaddset(&mask, SIGINT);
             sigaddset(&mask, SIGHUP);
             sigaddset(&mask, SIGTERM);
             sigaddset(&mask, SIGUSR1);
+            printf("DEBUG Masterthread: ho eseguito tutti i sigaddset\n");
             if (pthread_sigmask(SIG_BLOCK, &mask, NULL) != 0)
-            {
-                fprintf(stderr, "fatal error pthread_sigmask\n");
+            {fprintf(stderr, "fatal error pthread_sigmask\n");
                 exit(EXIT_FAILURE);
             }
-            pthread_t sigHandler;
+            pthread_t sigHandler; // creo il pthread_t del signal_handler 
             sigHarg argument = {&stop, mask, s_pipe[1]};
-            if (pthread_create(&sigHandler, NULL, sigHandlerTask, (void *)&argument))
-            {
+            if (pthread_create(&sigHandler, NULL, &sigHandlerTask, (void *)&argument)!=0){
                 fprintf(stderr, "errore nella creazione del sighandler\n");
                 exit(EXIT_FAILURE);
             }
+            printf("DEBUG Masterthread: signal_handler partito, salvo in uno string array i file da passare ai miei thread\n");
             //creo l'array che contiene i nomi dei file da passare ai thread della threadpool
+            printf("DEBUG MasterThread: alloco argarray dim=%d\n", dim);
+            fflush(stdout);
             string*argarray=malloc(sizeof(string)*dim);
             int i=0;
-            //alloco i file che sono stati passati al main
-            for(i=0; fileIndex<argc; i++){
+            //alloco i file che sono stati passati al main di cui ho il riferimento della posizione perchè getopt manda tutti i 
+            printf("DEBUG Masterthread: fileIndex=%d\n", fileIndex); fflush(stdout);
+            for(; fileIndex<argc; i++){
                 argarray[i]=malloc(sizeof(char)*PATH_LEN);
                 memset(argarray[i],'\0', PATH_LEN);
                 strcpy(argarray[i], argv[fileIndex]);
+                printf("DEBUG Masterthread: inserito %s\n", argarray[i]); fflush(stdout);
                 ++fileIndex;
             }
             //inserisco anche i file che ho trovato nella cartella passata
-            if(x!=0){
-                for(int k=0;k<x;k++){
+            printf("DEBUG Masterthread: File trovati nella cartella %d\n", x); fflush(stdout);
+            if(x != 0){
+                for(int k=0; k<x; k++){
                     argarray[i]=malloc(sizeof(char)*PATH_LEN);
                     memset(argarray[i],'\0', PATH_LEN);
                     strcpy(argarray[i], tmp[k]);
-                    free(tmp[i]);
                     ++i;
                 }
+                //libero la memoria di tmp 
+                for(int j=0; j<x; j++){
+                    free(tmp[j]);
+                }
                 free(tmp);
+                //libero directory name
                 free(d_directoryName);
             }
-
+            printf("DEBUG Masterthread: i file che passo al thread sono:");
+            for(int k=0; k<i; k++){
+                printf("\t");
+                puts(argarray[k]);
+            }
             //libero lo spazio di tmp e dirName
-
+/***************************************************FINO A QUI FUNZIONA TUTTO TRANNE GET OPT*************************************************************************************************************/
             //ignoro il segnale sigpipe per evitare di essere terminato da una scrittura su socket
             struct sigaction s;
             memset(&s,0,sizeof(s));
@@ -392,17 +437,6 @@ void runMasterThread(int argc,string argv[]){
                 exit(EXIT_FAILURE);
             }
 
-            //creo la threadpool
-            workerpool_t *wpool=NULL;
-            
-            //controllo che nella creazione della threadpool vada tutto bene
-            if((wpool =createWorkerpool(n_nthread,q_queueLen))==NULL){
-                fprintf(stderr, "ERRORE FATALE NELLA CREAZIONE DELLA THREADPOOL\n");
-                for(int h=0; h<dim; h++){
-                    free(argarray[h]);
-                }free(argarray);
-                exit(EXIT_FAILURE);
-            }
             int index=0;
             //itero fino a che non termina con segnale o finno a che non ho mandato tutti i file 
             while(!stop && index<dim){
