@@ -273,7 +273,7 @@ int main (int argc, string argv[]){
         }
     }
     //chiamo la funzione che fa partire la threadpool, il collector e il signal handler
-    runMasterThread(ntread,qsize,tdelay,dir,numFile,files);
+    runMasterThread(ntread,qsize,tdelay,numFile,files);
     //libero la memoria
     for(int i=0; i<numFile; i++){
         free(files[i]);

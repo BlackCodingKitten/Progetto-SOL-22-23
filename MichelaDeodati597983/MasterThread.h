@@ -17,12 +17,14 @@
 
 
 #include "./Util.h"
-
-
 /**
- * @brief funzione principale che svolge tutte le funzioni del MasterThread
+ * @brief è la funzione che gestisce la threadpool, lacia il signal handler, 
+ * e si forka nel processso collector, sostanzialmente il core del progetto
  * 
- * @param argc numero di argomenti passati in input
- * @param argv char*[] degli argomenti
+ * @param n numero thread
+ * @param q dimensione coda
+ * @param t delay assegamento task
+ * @param numFilePassati totale file passati al main esclusi quelli nella cartella
+ * @param argarray array di stringhe dei file passati
  */
-void runMasterThread(int argc,string argv[]);
+void runMasterThread(int n, int q, int t, int numFilePassati, string * files);
