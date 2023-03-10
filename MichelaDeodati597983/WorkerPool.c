@@ -369,12 +369,14 @@ void leggieSomma (void*arg){
     //dopo aver calcolato la somma libero la memoria
     free(fileArray);
 
-    printf("DEBUG WorkerPool:la somma è venuta %ld \n", somma);
-    //alloco il buffer per scrivere della dimensione 21 cioè 20= numero massimo di caratteri di maxlong +1 per il terminatore
-    string buffer = malloc(sizeof(char)*FILE_BUFFER_SIZE+1);
-    memset(buffer,'\0',FILE_BUFFER_SIZE+1);
-    //converto il valore della somma in stringa
+    printf("DEBUG WorkerPool:la somma è venuta %ld \n", somma);fflush(stdout);
+    //alloco il buffer per scrivere della dimensione 21 cioè 20= numero massimo di caratteri di maxlong + la lunghezza massima della path del file 
+    string buffer = malloc(sizeof(char)*FILE_BUFFER_SIZE+PATH_LEN);
+    memset(buffer,'\0',FILE_BUFFER_SIZE+PATH_LEN);
+    //converto il valore della somma in stringa e poi gli accodo la path del file per poi spedirlo al Collector
     sprintf(buffer, "%ld", somma);
+    strcat(buffer, " ");
+    strcat(buffer, filePath);
     printf("DEBUG WORKERPOOL: valore della somma:%ld, convertito in stringa:%s\nDEBUG WorkerPool: Attendo la accept dal Collector\n", somma,buffer);
     
     //attendo che il collector faccia l'accept
@@ -388,8 +390,10 @@ void leggieSomma (void*arg){
             exit(EXIT_FAILURE);
         }
     }
+    
+    printf("DEBUG WorkerPool:Collector ha fatto la accept %ld \n", somma);fflush(stdout);
 
-    //la somma è da spedire al Collector con la write
+    //la spedisco al Collector con la write
     if(writen(sock,buffer,strlen(buffer)+1)==-1){
         perror("write()");
         CLOSE_SOCKET(sock);
@@ -397,22 +401,15 @@ void leggieSomma (void*arg){
         REMOVE_SOCKET();
         exit(EXIT_FAILURE);
     }
-    //spedisco anche la path del file
-    if(writen(sock, filePath,strlen(filePath)+1) ==- 1){
-        perror("write()");
-        CLOSE_SOCKET(sock);
-        free(buffer);
-        REMOVE_SOCKET();
-        exit(EXIT_FAILURE);
-    }
+    printf("DEBUG WORKERPOOOL leggieSomma ha spedito al collector: %s\n", buffer);
 
     //libero la memoria
     if(buffer!=NULL){
         free(buffer);
     }
-    if(filePath!=NULL){
-        free(filePath);
-    }
+    // if(filePath!=NULL){
+    //     free(filePath);
+    // }
     //al termine dell'invio al collector chiudo il client
     printf("DEBUG WorkerPool: spedisco somma e path e chiuso la socket\n");
     CLOSE_SOCKET(sock);

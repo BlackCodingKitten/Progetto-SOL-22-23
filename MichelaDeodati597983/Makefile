@@ -10,7 +10,7 @@ LIBSMT 			=	$(LDFLAGS) -lCollector -lWorkerPool $(LIBS)
 LIBSMAIN		=	$(LIBS2) -lMasterThread $(LIBS) 			
 OBJECT			= 	./Collector.o ./WorkerPool.o ./MasterThread.o
 LIBSA		= 	./libCollector.a ./libMasterThread.a ./libWorkerPool.a
-FILES		=   file*.dat explected.txt ./testdir
+FILES		=   file*.dat expected.txt ./testdir
 CLEAN		= 	rm -f -r $(OBJECT) $(LIBSA)
 
 TARGETS         =   farm generafile 

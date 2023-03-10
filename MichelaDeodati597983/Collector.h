@@ -33,14 +33,7 @@
  * 
  */
 int listenSocket;
-/**
- * @brief struct che contiene la path del file e il valore calcolato
- * 
- */
-typedef struct data{
-    long fileValue;     //valore della sommatoria delle righe del file per il loro indice
-    string filePath;    //path del file
-}Data;
+
 
 void runCollector(int numFile, int signal_pipe);
 
