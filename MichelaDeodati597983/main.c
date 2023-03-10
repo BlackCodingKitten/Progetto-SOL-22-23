@@ -144,7 +144,7 @@ void findFileDir(const string dirName, string* saveFile, int index)
             struct stat buf;
             string filename = malloc(sizeof(string) * PATH_LEN);
             memset(filename, '\0', PATH_LEN);
-            strncpy(filename, dirName, PATH_LEN);
+            strcpy(filename, dirName);
             strcat(filename, "/");
             strcat(filename, f->d_name);
             if (stat(filename, &buf) == -1){
@@ -158,7 +158,7 @@ void findFileDir(const string dirName, string* saveFile, int index)
                 {   
                     //se è una cartella e non è '.' o '..'
                     dirTree[treeI] = malloc(sizeof(char) * PATH_LEN);
-                    strncpy(dirTree[treeI], filename, PATH_LEN);
+                    strcpy(dirTree[treeI], filename);
                     ++treeI;
                 }
             }
@@ -206,9 +206,9 @@ int main (int argc, string argv[]){
     int argvalue=0;
 
 
-    int ntread=0;
-    int qsize=0;
-    int tdelay=0;
+    int ntread=NTHREAD_DEFAULT;
+    int qsize=QUEUE_SIZE_DEFAULT;
+    int tdelay=DELAY_DEFAULT;
     //alloco dir solo se ne ho bisogno, cioè se viene passata l'opzione -d 
     string dir = NULL;
 
@@ -239,7 +239,7 @@ int main (int argc, string argv[]){
             //printf("DIRECTORY: %s\n", optarg);  
             dir=malloc(sizeof(char)*PATH_LEN);
             memset(dir, '\0',PATH_LEN);  
-            strncpy(dir,optarg,strlen(optarg));    
+            strcpy(dir,optarg);    
         default:
             //non faccio nulla
             break;
@@ -268,7 +268,7 @@ int main (int argc, string argv[]){
         }else{
             files[index]=(string)malloc(sizeof(char)*PATH_LEN);
             memset(files[index], '\0', PATH_LEN);
-            strncpy(files[index], argv[fileIndex], strlen(argv[fileIndex]));
+            strcpy(files[index], argv[fileIndex]);
             fileIndex++;
         }
     }

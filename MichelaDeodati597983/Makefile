@@ -10,10 +10,12 @@ LIBSMT 			=	$(LDFLAGS) -lCollector -lWorkerPool $(LIBS)
 LIBSMAIN		=	$(LIBS2) -lMasterThread $(LIBS) 			
 OBJECT			= 	./Collector.o ./WorkerPool.o ./MasterThread.o
 LIBSA		= 	./libCollector.a ./libMasterThread.a ./libWorkerPool.a
+FILES		=   file*.dat explected.txt ./testdir
+CLEAN		= 	rm -f -r $(OBJECT) $(LIBSA)
 
 TARGETS         =   farm generafile 
 
-.PHONY: all cleanall 
+.PHONY: all clean cleanall Socket runtest
 .SUFFIXES: .c .h
 
 all:				$(TARGETS) 
@@ -23,6 +25,7 @@ generafile:		generafile.c
 
 farm:				libMasterThread.a main.c 
 	$(CC) $(CFLAG) $(INCLUDES) main.c -o farm $(LIBSMAIN)
+	echo TEST: per eseguire i test usare "make runtest" 
 
 libMasterThread.a:	MasterThread.o
 	$(ARRVS) libMasterThread.a MasterThread.o Collector.o WorkerPool.o
@@ -43,5 +46,15 @@ Collector.o:		Collector.c
 	$(CC) $(CFLAG) $(INCLUDES) Collector.c $(DFLAG) Collector.o $(LIBS)
 
 clean:	
-	rm -f $(OBJECT) $(LIBSA)
+	$(CLEAN)
+
+Socket: 
+	rm -f -r farm.sck
+
+cleanall: 
+	$(CLEAN) ./farm ./generafile $(FILES) 
+
+runtest:
+	chmod u+rw test.sh
+	./test.sh
 

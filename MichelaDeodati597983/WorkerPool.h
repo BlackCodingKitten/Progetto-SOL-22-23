@@ -29,7 +29,6 @@
  */
 typedef struct workerthread_t{
     pthread_t wid;
-    int wpoolIndex;
 }workerthread_t;
 
 /**
@@ -39,9 +38,9 @@ typedef struct workerthread_t{
  * @var funPtr: Puntetore alla funzione da eseguire
  * @var arg: argomento della funzione 
 */
-typedef struct workertask_t{
-    void(*funPtr)(void*);
-    void*arg;
+typedef struct wT {
+    void(*fun)(void*); //puntatore alla funzione da eseguire
+    void* arg;  //filepath che viene passata dal masterthread
 }workertask_t;
 
 /**
@@ -53,14 +52,13 @@ typedef struct workerpool_t{
     pthread_cond_t  cond;                   //usata per notificare un worker
     workerthread_t*      workers;           //array di worker id
     int             numWorkers;             //size dell'array workers
-    workertask_t*   pendingQueue;           //coda interna usata per le task pendenti
+    workertask_t*   pendingQueue;           //coda interna usata per le task
     int             queueSize;              //massima size della coda, se settata a -1 non ccetta task pendenti
-    int             activeTask;             //numero di task che sono attualmente in esecuzione
+    int             activeTask;             //numero di task che sono attualmente in esecuzione dai workers
     int             queueHead;              //testa della coda
     int             queueTail;              //fine della coda
-    int             pendingQueueCount;      //quantità di task pendenti presenti
+    int             pendingQueueCount;      //quantità di task presenti nella coda
     bool            exiting;                //true segnala se viene iniziato il protocollo di uscita
-    bool            waitEndingTask;         //true quando si vuole aspettare che non ci siano più lavori in coda
 }workerpool_t;
 
 //FUNZIONI DI GESTIONE DELLA THREADPOOL DI WORKER
@@ -77,25 +75,23 @@ workerpool_t* createWorkerpool (int numWorkers, int pendingSize);
 
 /**
  *@function destroyWorkerPool
- * @brief stoppa tutti i thread in esecuzione e distrugge l'oggetto wpool 
+ * @brief stoppa tutti i thread in esecuzione e distrugge l'oggetto wpool attendendo prima che vengano esaurite le task in coda
  * 
- * @param wpool 
- * @param forcedExit 
+ * @param wpool oggetto da liberare
  * @return true in caso di successo
  * @return false in caso di fallimento, setta errno
  */
-bool destroyWorkerpool (workerpool_t* wpool, bool forcedExit);
+bool destroyWorkerpool (workerpool_t* wpool);
 
 /**
  * @function addToWorkerPool
  * @brief aggiunge una task al wpool, se ci sono thread liberi o se la coda dei pendenti non è piena, altrimenti fallisce
  * 
  * @param wpool oggetto workerpool
- * @param task task del worker
  * @param arg argomento della task del worker
  * @return int 0 se va tutto bene, 1 non ci sono thread liberi o la coda è piena,-1 fallisce la chimata, setta errno
  */
-int addToWorkerpool (workerpool_t* wpool, void(*task)(void*), void*arg);
+int addTask (workerpool_t* wpool, void* arg);
 
 /**
  * @brief task del thread worker che fa i calcoli sul file
