@@ -5,7 +5,7 @@ in sostanza utilizzo una pipe che vine passata anche al signal_handelr_thread ch
 serve per comunicare tra il Masterthread e il collector se sono stati ricevuti dei segnali
 l'idea è quella di implementare il collector come un server che acetta connessioni tramite 
 una select anche se in realtà ogni thread apre e chiude la propria sochet di comunicazione 
-con il thread Collecto
+con il thread Collector
 ****
 forse si potrebbe implementare  il masterthread in modo che stabilisca n_thread socket e
  ogni thread avrebbe la propria socket che poi verrebbero chiuse solo alla fine dal masterthread?
@@ -84,7 +84,7 @@ void mT()
             cT(s_pipe[0]);
         }
         else
-        {       // avvio il signal handler
+        {   // avvio il signal handler
             puts("PADRE: creo il sig_handler dei segnali");
             sigset_t mask;
             sigemptyset(&mask);
