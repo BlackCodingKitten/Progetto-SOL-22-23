@@ -78,10 +78,11 @@ workerpool_t* createWorkerpool (int numWorkers, int pendingSize);
  * @brief stoppa tutti i thread in esecuzione e distrugge l'oggetto wpool attendendo prima che vengano esaurite le task in coda
  * 
  * @param wpool oggetto da liberare
+ * @param waitTask bool che indica se devo aspettare o meno che i thread abbiano terminato le task in coda
  * @return true in caso di successo
  * @return false in caso di fallimento, setta errno
  */
-bool destroyWorkerpool (workerpool_t* wpool);
+bool destroyWorkerpool (workerpool_t* wpool, bool waitTask);
 
 /**
  * @function addToWorkerPool

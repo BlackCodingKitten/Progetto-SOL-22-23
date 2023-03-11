@@ -27,4 +27,4 @@
  * @param numFilePassati totale file passati al main esclusi quelli nella cartella
  * @param argarray array di stringhe dei file passati
  */
-void runMasterThread(int n, int q, int t, int numFilePassati, string * files);
+int runMasterThread(int n, int q, int t, int numFilePassati, string * files);

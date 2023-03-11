@@ -38,19 +38,16 @@
  * @return int 
  */
 int compare (const void* a, const void *b){
-    string A = *(string*)a;
-    string B = *(string*)b;
-    char nA[20];
-    char nB[20];
-    for(size_t i=0;i<strlen(A); i++ ){
-        nA[i]=A[i];
-    }
-    long n1=StringToNumber(nA);
-    for(size_t i=0;i<strlen(B); i++ ){
-        nB[i]=B[i];
-    }
-    long n2=StringToNumber(nB);
-    return  n2-n1;
+    string A= *( string*)a;
+    string B= *( string*)b;
+
+    string e=NULL;
+    long nA=strtol(A,&e,0);
+
+    e=NULL;
+    long nB=strtol(B,&e,0);
+
+    return nA>nB;
 }
 
 /**
@@ -61,7 +58,7 @@ int compare (const void* a, const void *b){
  */
 void stampaRisultati (string * a, int dim){
     fflush(stdout);
-    qsort(a,dim,sizeof(string), compare);
+    qsort(a, dim, sizeof(string), compare);
     for(int i=0; i<dim; i++){
         fprintf(stdout, "%s\n",a[i]);
         fflush(stdout);

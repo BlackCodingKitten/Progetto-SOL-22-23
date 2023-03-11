@@ -5,7 +5,6 @@
  * @date 15-03-2023
  * 
  */
-
 #define _GNU_SOURCE
 #include <pthread.h>
 #include <unistd.h>
@@ -23,8 +22,6 @@
 #include <sys/types.h>
 #include <sys/un.h>
 #include <signal.h>
-
-
 
 #include "./WorkerPool.h"
 #include "./Collector.h"
@@ -198,14 +195,14 @@ void findFileDir(const string dirName, string* saveFile, int index)
 }
 
 int main (int argc, string argv[]){
-    //contenuta in Util.h esegue il controllo del numero di argomenti passati al main
+    //esegue il controllo del numero di argomenti passati al main in maniera quantitativa
     InputCheck(argc, argv);
-    //fileindex contiene la osizione dei file passati al main
+
+    //fileindex contiene la posizione dei file passati al main
     int fileIndex=1;
     int opt=0;
     int argvalue=0;
-
-
+    //setto i valori iniziali della threadpool, così se non sono passati altri valori da linea di comando valgono i valori di default
     int ntread=NTHREAD_DEFAULT;
     int qsize=QUEUE_SIZE_DEFAULT;
     int tdelay=DELAY_DEFAULT;
@@ -218,25 +215,22 @@ int main (int argc, string argv[]){
         {
         case 'n':
         fileIndex+=2;
+            //string to number è contenuta in Util.h ed è la funzione che esegue la strtol() con controlli 
             argvalue=StringToNumber(optarg);
-            //printf("NUMERO DI THREAD: %d\n", argvalue);
             ntread=checkNthread(argvalue);
             break;
         case 'q':
             fileIndex+=2;
             argvalue=StringToNumber(optarg);
-            //printf("LUNGHEZZA DELLA CODA: %d\n", argvalue);
             qsize=checkqSize(argvalue);
             break;
         case 't':
             fileIndex+=2;
             argvalue=StringToNumber(optarg);
-            //printf("DELAY: %d\n", argvalue);
             tdelay=checkDelay(argvalue);
             break;
         case 'd':
-            fileIndex+=2;
-            //printf("DIRECTORY: %s\n", optarg);  
+            fileIndex+=2;  
             dir=malloc(sizeof(char)*PATH_LEN);
             memset(dir, '\0',PATH_LEN);  
             strcpy(dir,optarg);    
@@ -248,20 +242,23 @@ int main (int argc, string argv[]){
 
     //array di stringhe che salva il risultato dell'esplorazione della cartella
     string * files=(string*)malloc(sizeof(string)*100);//allco 100 posti tanto poi faccio la realloc
+    for(int s=0; s<100; s++){
+        files[s]=NULL;
+    }
     //esploro la cartella se è stata passata come argomento
     if(dir!=NULL){
         findFileDir(dir, files,0);
     }
-    //conto quanti file ho trovato e quanti ce ne sono nel main 
+    //conto quanti file ho trovato
     int numFile=0;
     while(files[numFile]!=NULL){
         numFile++;
-    }//se non ho passato cartelle non entra nel while e numfile rimane 0
+    }//se non ho passato cartelle con l'opzione -d non entra nel while e numfile rimane 0
     //sommo per quanti file sono stati passati al main
     numFile=numFile+(argc-fileIndex);
     //rialloco la memoria ora che conosco il numero giusto di file
     files=realloc(files, sizeof(string)*numFile);
-    //inserisco tutti i file nell'array files
+    //inserisco tutti i file passati al main nell'array files, tramite fileindex conosco esattamente a che posizione di argv[] si trovano
     for(int index=0; index<numFile; index++){
         if(files[index]!=NULL){
             continue;
@@ -272,8 +269,9 @@ int main (int argc, string argv[]){
             fileIndex++;
         }
     }
-    //chiamo la funzione che fa partire la threadpool, il collector e il signal handler
-    runMasterThread(ntread,qsize,tdelay,numFile,files);
+
+    //chiamo la funzione che fa partire la threadpool, fa la fork e invoca il collector e crea il thread signal handler
+    int ext = runMasterThread(ntread,qsize,tdelay,numFile,files);
     //libero la memoria
     for(int i=0; i<numFile; i++){
         free(files[i]);
@@ -282,5 +280,6 @@ int main (int argc, string argv[]){
     if(dir!=NULL){
         free(dir);
     }
-    return 0;
+    //esco
+    return ext;
 }

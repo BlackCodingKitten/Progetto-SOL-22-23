@@ -47,10 +47,10 @@ typedef char* string;
 
 #define REMOVE_SOCKET()\
    if(unlink(SOCKET_NAME)==0){\
-        fprintf(stdout,"Socket %s successfully removed.\n",SOCKET_NAME);\
+        \
    }else{\
     if(errno==ENOENT){\
-        fprintf(stderr, "Socket %s doesn't exist.\n", SOCKET_NAME);\
+        \
     }else{\
         perror("unlink(farm.sck)");\
     }\
@@ -101,7 +101,7 @@ static inline int readn(long fileDescriptor, void*buffer, size_t bufferSize){
  * @param fileDescriptor dove scrivo
  * @param buffer cosa scrivo
  * @param bufferSize dimensione di cosa scrivo
- * @return int -1 errore(settato errno), 0 se durante la scrittura la write ritorna 0, 1 la scrittura è terminata con successo
+ * @return int -1 errore(settato errno), 0 se non ci sono byte da scrivere,il numero di byte scritti se viene eseguito tutto senza errori
  */
 static inline int writen(long fileDescriptor, void*buffer, size_t bufferSize){
     size_t remain= bufferSize;
@@ -121,12 +121,12 @@ static inline int writen(long fileDescriptor, void*buffer, size_t bufferSize){
         remain -= writtenByte;
         bufferPtr += writtenByte;
     }
-    return 1;
+    return writtenByte;
 }
 
 /**
- * @brief controlla che la tringa passata sia un numero valido altrimenti ritorna -1
- * 
+ * @brief controlla che la stringa passata sia un numero valido
+ * @return -1 in caso di fallimento, il valore munerico di s se ha successo
  */
 static inline int StringToNumber (const string s){
     if(s==NULL){
