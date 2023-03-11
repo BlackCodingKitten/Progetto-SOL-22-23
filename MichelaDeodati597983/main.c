@@ -91,7 +91,7 @@ int checkDelay (const int time){
  */
 int isFile(const string filePath){
     struct stat path_stat;
-    string tmp =malloc(sizeof(char)*strlen(filePath)+3);
+    string tmp = malloc(sizeof(char)*strlen(filePath)+3);
     memset(tmp, '\0', strlen(filePath)+3);
     strcpy(tmp, "./");
     strcat(tmp, filePath);
@@ -99,12 +99,12 @@ int isFile(const string filePath){
         perror("stat");
         return 0;
     }
+    //controllo che sia effettivamente un file
     if(S_ISREG(path_stat.st_mode)){
-        //controllo anche che sia il tipo di file corretto che i miei thread possono leggere
-        if(strstr(filePath,".dat") && strstr(filePath, "file")){
-            return 1;
-        }
+        free(tmp);
+        return 1;
     }
+    free(tmp);
     return 0;
 }
 
@@ -175,6 +175,7 @@ void findFileDir(const string dirName, string* saveFile, int index)
 
                 }
             }
+            free(filename);
         }
         if (errno != 0)
         {

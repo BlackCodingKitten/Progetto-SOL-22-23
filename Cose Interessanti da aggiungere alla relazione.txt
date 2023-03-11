@@ -35,3 +35,11 @@ ignorare tale segnale, i figli di tale processo non diverranno zombie (è chiaro
 signal(SIGCLD, SIG_IGN);
 
 previene la creazione di zombie.
+
+
+
+
+ The pthread_detach() function marks the thread identified by
+       thread as detached.  When a detached thread terminates, its
+       resources are automatically released back to the system without
+       the need for another thread to join with the terminated thread.

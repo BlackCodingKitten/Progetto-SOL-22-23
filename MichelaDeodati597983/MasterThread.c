@@ -13,6 +13,7 @@
 #include <pthread.h>
 #include <unistd.h>
 #include <ctype.h>
+#include <time.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -38,7 +39,7 @@
  */
 typedef struct s{
     int * stop;         //condizione di terminazione del while del masterthread;
-    sigset_t set;       // set dei segnali da gestire mascherati
+    sigset_t mask;    // set dei segnali da gestire mascherati
     int signal_pipe;    //descrittore di scrittura di una pipe senza nome usato per comunicare al collector che è terminata l'esecuzione
 }sigHarg;
 
@@ -51,34 +52,46 @@ typedef struct s{
  * @return void* 
  */
 static void* sigHandlerTask (void*arg){
+    /*pthread_detach contrassegna un thread come come detach, in questo modo quando termina 
+    le sue risorse vengono automaticamente restituite al sistema senza
+    senza che sia necessario che un altro thread esegua una join*/
+    if(pthread_detach(pthread_self())==-1){
+        perror("pthread_detach(pthread_self) signal handeler");
+        pthread_exit(NULL);
+    }
+
     sigHarg sArg = *(sigHarg*)arg;
-    while (true){
-        int sig;
-        if(sigwait(&(sArg.set),&sig)==-1){
+    int sig;
+    while (1){
+        //controllo che sigwait non ritorni un errore
+        if(sigwait(&(sArg.mask), &sig)==-1){
             errno=EINVAL;
             perror("SIGNAL_HANDLER-Masterthread.c-123: errore sigwait");
             exit(EXIT_FAILURE);
-        }
-        switch (sig){
-            case SIGINT:
-            case SIGHUP:
-            case SIGTERM:
-            if(writen(sArg.signal_pipe,"t", 2)==-1){
-                fprintf(stderr, "SIGNAL_HANDLER-Masterthread.c-131: errore writen sulla pipe");
+        }else{
+            switch (sig){
+                case SIGINT:
+                case SIGHUP:
+                case SIGTERM:
+                    //cambio il valore della guardia del while in masterthread
+                    *(sArg.stop)=1;
+                    //notifico la ricezione del segnale al Collector e poi chiudo la pipe
+                    if(writen(sArg.signal_pipe,"t", 2)==-1){
+                        fprintf(stderr, "SIGNAL_HANDLER-Masterthread.c-131: errore writen sulla pipe");
+                    }
+                    close(sArg.signal_pipe); 
+                    pthread_exit(NULL);          
+                case SIGUSR1:
+                    //invio al collector il segnale di stampa
+                    if(writen(sArg.signal_pipe, "s", 2)==-1){
+                        fprintf(stderr, "SIGNAL_HANDLER-Masterthread.c-137: errore writen sulla pipe");
+                    }
+                default:
+                    continue;
+                    break;
             }
-            close(sArg.signal_pipe); //notifico la ricezione del segnale al Collector;
-            //cambio il valore della guardia del while in masterthread
-            *(sArg.stop)=1;
-            return NULL;          
-            case SIGUSR1:
-                //invio al collector il segnale di stampa
-                if(writen(sArg.signal_pipe, "s", 2)==-1){
-                    fprintf(stderr, "SIGNAL_HANDLER-Masterthread.c-137: errore writen sulla pipe");
-                }
         }
-    }
-    return NULL;
-
+    }//end while(true)
 }
 
 /**
@@ -86,6 +99,8 @@ static void* sigHandlerTask (void*arg){
  * gestione dei segnali, fork per creare il processo figlio collector, terminazione della threadpool
  */
 int runMasterThread(int n, int q, int t, int numFilePassati, string * files){
+    //creo la struct timespec a cui passo parametro t come tv_sec
+    struct timespec delay = {t,0};
     //creo la condizione del while per terminare in caso di ricezione dei segnali SIGHUP,SIGINT,SIGTERM
     int stop=0;
     //creo la threadpool con la funzione createWorkerpool e controllo che la creazione della threadpool si concluda con successo
@@ -103,6 +118,16 @@ int runMasterThread(int n, int q, int t, int numFilePassati, string * files){
         return EXIT_FAILURE;
     }
 
+
+    //ignoro il segnale sigpipe per evitare di essere terminato da una scrittura su socket
+    struct sigaction s;
+    memset(&s,0,sizeof(s));
+    s.sa_handler=SIG_IGN;
+    if((sigaction(SIGPIPE,&s,NULL))==-1){
+        perror("sigaction()");
+        destroyWorkerpool(wpool,false);
+        return EXIT_FAILURE;
+    }
     //Eseguo la fork, il processo padre(stesso proceso del main) continuerà ad essere il MasterThread,  mentre il processo figlio invocherà la funzione che gestisce il collector
     pid_t process_id=fork();
     if(process_id==0){
@@ -116,15 +141,18 @@ int runMasterThread(int n, int q, int t, int numFilePassati, string * files){
             REMOVE_SOCKET();
             return EXIT_FAILURE;
         }else{
-
-            // creo il signal handler nel processo padre dopo aver fatto la fork in questo modo il processo figlio non eredita la gestione dei segnali
+            // inizializzo il signal handler nel processo padre dopo aver fatto la fork
             sigset_t mask;
-            sigemptyset(&mask);
+            if(sigemptyset(&mask)==-1){
+                perror("sigemptset()");
+                destroyWorkerpool(wpool,false);
+                return  EXIT_FAILURE;
+            }
             sigaddset(&mask, SIGINT);
-            sigaddset(&mask, SIGHUP);
             sigaddset(&mask, SIGTERM);
+            sigaddset(&mask, SIGHUP);
             sigaddset(&mask, SIGUSR1);
-            
+
             //blocco i segnali per poterli gestire in  maniera custom
             if (pthread_sigmask(SIG_BLOCK, &mask, NULL) != 0){
                 fprintf(stderr, "fatal error pthread_sigmask\n");
@@ -137,9 +165,18 @@ int runMasterThread(int n, int q, int t, int numFilePassati, string * files){
                 REMOVE_SOCKET();
                 return EXIT_FAILURE;
             }
-            pthread_t sigHandler; // creo il pthread_t del signal_handler 
-            sigHarg argument = {&stop, mask, s_pipe[1]};
-            if (pthread_create(&sigHandler, NULL, &sigHandlerTask, (void *)&argument)!=0){
+            //setto gli argomenti da passare al thread
+            sigHarg*argSH =(sigHarg*)malloc(sizeof(sigHarg));
+            argSH->mask=mask;
+            argSH->signal_pipe=s_pipe[1];
+            argSH->stop=&stop;
+
+            //creo il thread signal handler in modalità detached
+            pthread_t sigHandler;
+            pthread_attr_t attr;
+            pthread_attr_init(&attr);
+            pthread_attr_setdetachstate(&attr,PTHREAD_CREATE_DETACHED);
+            if (pthread_create(&sigHandler, &attr, &sigHandlerTask, (void *)&argSH) != 0){
                 fprintf(stderr, "errore nella creazione del sighandler\n");
                 destroyWorkerpool(wpool,false);
                 int err = writen(s_pipe[0],"t", 2);
@@ -147,31 +184,18 @@ int runMasterThread(int n, int q, int t, int numFilePassati, string * files){
                     fprintf(stderr, "Impossibile comunicare con il Collector\n");
                 }
                 REMOVE_SOCKET();
-                return EXIT_FAILURE;
-            }
-
-            //ignoro il segnale sigpipe per evitare di essere terminato da una scrittura su socket
-            struct sigaction s;
-            memset(&s,0,sizeof(s));
-            s.sa_handler=SIG_IGN;
-            if((sigaction(SIGPIPE,&s,NULL))==-1){
-                perror("sigaction()");
-                destroyWorkerpool(wpool,false);
-                int err = writen(s_pipe[0],"t", 2);
-                if(err==-1){
-                    fprintf(stderr, "Impossibile comunicare con il Collector\n");
-                }
-                REMOVE_SOCKET();
+                free(argSH);
                 return EXIT_FAILURE;
             }
             int index=0; //indice per scorrere files
             //itero fino a che non termina con segnale o fino a che non ho mandato tutti i file 
             while(!stop && index<numFilePassati){
+                nanosleep(&delay,NULL);
                 int check = addTask(wpool, (void*)&files[index]);
                 if(check==0){
                     //incremento l'indice solo se riesco ad assegnare correttamente la task alla threadpool
                     ++index;
-                    sleep(t);//se non è stato passato alcun t dorme 0
+                   //se non è stato passato alcun t dorme 0
                     continue;
                 }else{
                     if(check==1){
@@ -197,6 +221,7 @@ int runMasterThread(int n, int q, int t, int numFilePassati, string * files){
             //aspetto che termini il collector
             waitpid(process_id,NULL,0);
             REMOVE_SOCKET();
+            free(argSH);
             return EXIT_SUCCESS;
         }
     }
