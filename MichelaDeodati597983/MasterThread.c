@@ -152,6 +152,7 @@ int runMasterThread(int n, int q, int t, int numFilePassati, string * files){
         sigaddset(&mask, SIGHUP);
         sigaddset(&mask, SIGUSR1);
         if(process_id==0){
+
             //sono nel processo figlio: avvio il processo collector, gli passo signal_pipe[0] per leggere quello che scrive il signal hander su signal_pipe[1]
             runCollector(numFilePassati,s_pipe[0]);
         }else{
