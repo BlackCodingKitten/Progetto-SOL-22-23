@@ -282,5 +282,6 @@ int main (int argc, string argv[]){
         free(dir);
     }
     //esco
+    printf("ritorno %d\n", ext);
     return ext;
 }

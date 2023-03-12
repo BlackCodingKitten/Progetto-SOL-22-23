@@ -67,6 +67,7 @@ void stampaRisultati (string * a, int dim){
 }
 
 void runCollector (int numFile, int signal_pipe){
+    bool loop=true;
     string dataArray[numFile];
     //inizializzo l'array di file da stampare
     for(int i=0; i<numFile; i++){
@@ -119,7 +120,7 @@ void runCollector (int numFile, int signal_pipe){
 
     //tengo traccia del file descriptor più grande
     int fdmax=(listenSocket>signal_pipe)?listenSocket:signal_pipe;
-    while (true){
+    while (loop){
         
         tmp_set=set;
         if(select(fdmax+1,&tmp_set,NULL,NULL,NULL)==-1){
@@ -131,11 +132,11 @@ void runCollector (int numFile, int signal_pipe){
             }
             free(dataArray);
             REMOVE_SOCKET();
-            exit(EXIT_FAILURE);
+            _exit(EXIT_FAILURE);
         }
 
         //adesso iteriamo per capire da quale file descriptor abbiamo ricevuto un messaggio
-        for(int fd=0; fd<(fdmax+1);fd++){
+        for(int fd=0; (fd<(fdmax+1)) && loop ;fd++){
             if(FD_ISSET(fd,&tmp_set)){
                 int fd_conn=0;
                 if(fd==listenSocket){
@@ -150,7 +151,7 @@ void runCollector (int numFile, int signal_pipe){
                         }
                         free(dataArray);
                         REMOVE_SOCKET();
-                        exit(EXIT_FAILURE);
+                        _exit(EXIT_FAILURE);
                     }                    
                     if(readn(fd_conn, dataArray[index],(FILE_BUFFER_SIZE+PATH_LEN))==-1){
                         fprintf(stderr, "COLLECTOR: ho ricevuto: %s", dataArray[index]);
@@ -166,7 +167,8 @@ void runCollector (int numFile, int signal_pipe){
                             free(dataArray[l]);
                         }
                         //chiudo il processo 
-                        exit(EXIT_SUCCESS);                        
+                        puts("Collector termina");
+                        loop=false;                        
                     }
                 }
                 /**
@@ -186,7 +188,7 @@ void runCollector (int numFile, int signal_pipe){
                         for(int l=0; l<numFile; l++){
                             free(dataArray[l]);
                         }
-                        exit(EXIT_SUCCESS);
+                        loop=false;
                     }
                     if(strcmp(a,"s")==0){
                         stampaRisultati(dataArray,index);
@@ -195,7 +197,7 @@ void runCollector (int numFile, int signal_pipe){
             }
         }
     }//end while select
-    exit(EXIT_FAILURE); //qui non ci arriva mai
+    _exit(EXIT_SUCCESS);
 }
 
 

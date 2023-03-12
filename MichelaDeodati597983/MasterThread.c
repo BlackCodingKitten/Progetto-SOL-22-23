@@ -7,6 +7,7 @@
  * 
  * 
  */
+#define _GNU_SOURCE
 #ifndef _POSIX_C_SOURCE
 #define _POSIX_C_SOURCE 2001112L
 #endif
@@ -39,7 +40,7 @@
  */
 typedef struct s{
     int * stop;         //condizione di terminazione del while del masterthread;
-    sigset_t mask;    // set dei segnali da gestire mascherati
+    sigset_t*set;    // set dei segnali da gestire mascherati
     int signal_pipe;    //descrittore di scrittura di una pipe senza nome usato per comunicare al collector che è terminata l'esecuzione
 }sigHarg;
 
@@ -59,31 +60,34 @@ static void* sigHandlerTask (void*arg){
         perror("pthread_detach(pthread_self) signal handeler");
         pthread_exit(NULL);
     }
-
-    sigHarg sArg = *(sigHarg*)arg;
+    sigHarg*sArg = (sigHarg*)arg;
+    sigset_t*set= sArg->set;
+    printf("%p = indirizzo del set nel signal handler\n", sArg->set);
     int sig;
-    while (1){
+    while (!(*(sArg->stop))){
         //controllo che sigwait non ritorni un errore
-        if(sigwait(&(sArg.mask), &sig)==-1){
+        if(sigwait(set, &sig)==-1){
             errno=EINVAL;
             perror("SIGNAL_HANDLER-Masterthread.c-123: errore sigwait");
             exit(EXIT_FAILURE);
         }else{
+            puts("ho pricevuto un segnale");
             switch (sig){
                 case SIGINT:
                 case SIGHUP:
                 case SIGTERM:
                     //cambio il valore della guardia del while in masterthread
-                    *(sArg.stop)=1;
+                    *(sArg->stop)=1;
+                    
                     //notifico la ricezione del segnale al Collector e poi chiudo la pipe
-                    if(writen(sArg.signal_pipe,"t", 2)==-1){
+                    if(writen(sArg->signal_pipe,"t", 2)==-1){
                         fprintf(stderr, "SIGNAL_HANDLER-Masterthread.c-131: errore writen sulla pipe");
                     }
-                    close(sArg.signal_pipe); 
+                    close(sArg->signal_pipe); 
                     pthread_exit(NULL);          
                 case SIGUSR1:
                     //invio al collector il segnale di stampa
-                    if(writen(sArg.signal_pipe, "s", 2)==-1){
+                    if(writen(sArg->signal_pipe, "s", 2)==-1){
                         fprintf(stderr, "SIGNAL_HANDLER-Masterthread.c-137: errore writen sulla pipe");
                     }
                 default:
@@ -91,7 +95,9 @@ static void* sigHandlerTask (void*arg){
                     break;
             }
         }
+        
     }//end while(true)
+    pthread_exit(NULL); 
 }
 
 /**
@@ -109,16 +115,6 @@ int runMasterThread(int n, int q, int t, int numFilePassati, string * files){
         fprintf(stderr, "MASTERTHREAD: Errore fatale nella creazione della workerpool\n");
         return EXIT_FAILURE;
     }
-
-    //creo la pipe che mi permette di segnalare al collector tramite il signalHandler che sto terminando o per dirgli di stamapare
-    int s_pipe[2];
-    if(pipe(s_pipe)==-1){
-        perror("Masterthread: errore esecuzione pipe()");
-        destroyWorkerpool(wpool,false);
-        return EXIT_FAILURE;
-    }
-
-
     //ignoro il segnale sigpipe per evitare di essere terminato da una scrittura su socket
     struct sigaction s;
     memset(&s,0,sizeof(s));
@@ -128,46 +124,55 @@ int runMasterThread(int n, int q, int t, int numFilePassati, string * files){
         destroyWorkerpool(wpool,false);
         return EXIT_FAILURE;
     }
+
+    //creo la pipe che mi permette di segnalare al collector tramite il signalHandler che sto terminando o per dirgli di stamapare
+    int s_pipe[2];
+    if(pipe(s_pipe)==-1){
+        perror("Masterthread: errore esecuzione pipe()");
+        destroyWorkerpool(wpool,false);
+        return EXIT_FAILURE;
+    }
     //Eseguo la fork, il processo padre(stesso proceso del main) continuerà ad essere il MasterThread,  mentre il processo figlio invocherà la funzione che gestisce il collector
     pid_t process_id=fork();
-    if(process_id==0){
-        //sono nel processo figlio: avvio il processo collector, gli passo signal_pipe[0] per leggere quello che scrive il signal hander su signal_pipe[1]
-        runCollector(numFilePassati,s_pipe[0]);
-
+    if(process_id<0){
+        fprintf(stderr, "MASTERTHREAD: Errore la fork ha ritornato un id negativo process_id=%d\n", process_id);
+        destroyWorkerpool(wpool,false);
+        REMOVE_SOCKET();
+        return EXIT_FAILURE;
     }else{
-        if(process_id<0){
-            fprintf(stderr, "MASTERTHREAD: Errore la fork ha ritornato un id negativo process_id=%d\n", process_id);
+        // inizializzo il signal handler nel processo padre dopo aver fatto la fork
+        sigset_t mask;
+        if(sigemptyset(&mask)==-1){
+            perror("sigemptset()");
             destroyWorkerpool(wpool,false);
-            REMOVE_SOCKET();
-            return EXIT_FAILURE;
+            return  EXIT_FAILURE;
+        }
+        sigaddset(&mask, SIGINT);
+        sigaddset(&mask, SIGTERM);
+        sigaddset(&mask, SIGHUP);
+        sigaddset(&mask, SIGUSR1);
+        if(process_id==0){
+            //sono nel processo figlio: avvio il processo collector, gli passo signal_pipe[0] per leggere quello che scrive il signal hander su signal_pipe[1]
+            runCollector(numFilePassati,s_pipe[0]);
         }else{
-            // inizializzo il signal handler nel processo padre dopo aver fatto la fork
-            sigset_t mask;
-            if(sigemptyset(&mask)==-1){
-                perror("sigemptset()");
-                destroyWorkerpool(wpool,false);
-                return  EXIT_FAILURE;
-            }
-            sigaddset(&mask, SIGINT);
-            sigaddset(&mask, SIGTERM);
-            sigaddset(&mask, SIGHUP);
-            sigaddset(&mask, SIGUSR1);
-
             //blocco i segnali per poterli gestire in  maniera custom
             if (pthread_sigmask(SIG_BLOCK, &mask, NULL) != 0){
+                //se da errore non setta errno
                 fprintf(stderr, "fatal error pthread_sigmask\n");
                 destroyWorkerpool(wpool,false);
                 //notifico al processo figlio che deve terminare:
-                int err=writen(s_pipe[0],"t", 2);
+                int err=writen(s_pipe[1],"t", 2);
                 if(err==-1){
-                    fprintf(stderr, "Impossibile comunicare con il Collector\n");
-                }
-                REMOVE_SOCKET();
-                return EXIT_FAILURE;
+                fprintf(stderr, "Impossibile comunicare con il Collector\n");
             }
+            REMOVE_SOCKET();
+            return EXIT_FAILURE;
+            }
+            
             //setto gli argomenti da passare al thread
             sigHarg*argSH =(sigHarg*)malloc(sizeof(sigHarg));
-            argSH->mask=mask;
+            argSH->set=&mask;
+            printf("%p = indirizzo del set nel MT\n", argSH->set);fflush(stdout);
             argSH->signal_pipe=s_pipe[1];
             argSH->stop=&stop;
 
@@ -176,10 +181,10 @@ int runMasterThread(int n, int q, int t, int numFilePassati, string * files){
             pthread_attr_t attr;
             pthread_attr_init(&attr);
             pthread_attr_setdetachstate(&attr,PTHREAD_CREATE_DETACHED);
-            if (pthread_create(&sigHandler, &attr, &sigHandlerTask, (void *)&argSH) != 0){
+            if (pthread_create(&sigHandler, NULL, &sigHandlerTask, (void *)&argSH) != 0){
                 fprintf(stderr, "errore nella creazione del sighandler\n");
                 destroyWorkerpool(wpool,false);
-                int err = writen(s_pipe[0],"t", 2);
+                int err = writen(s_pipe[1],"t", 2);
                 if(err==-1){
                     fprintf(stderr, "Impossibile comunicare con il Collector\n");
                 }
@@ -187,15 +192,19 @@ int runMasterThread(int n, int q, int t, int numFilePassati, string * files){
                 free(argSH);
                 return EXIT_FAILURE;
             }
+            
             int index=0; //indice per scorrere files
             //itero fino a che non termina con segnale o fino a che non ho mandato tutti i file 
-            while(!stop && index<numFilePassati){
+            while(!stop){
                 nanosleep(&delay,NULL);
                 int check = addTask(wpool, (void*)&files[index]);
                 if(check==0){
                     //incremento l'indice solo se riesco ad assegnare correttamente la task alla threadpool
                     ++index;
                    //se non è stato passato alcun t dorme 0
+                   if(index==numFilePassati){
+                        goto chiusura;
+                   }
                     continue;
                 }else{
                     if(check==1){
@@ -203,7 +212,7 @@ int runMasterThread(int n, int q, int t, int numFilePassati, string * files){
                         continue;
                     }else{
                         //check==-1 c'è stato un errore grave nella addTask notifico al collector che deve termianre ed esco 
-                        int err = writen(s_pipe[0],"t", 2);
+                        int err = writen(s_pipe[1],"t", 2);
                         if(err==-1){
                             fprintf(stderr, "Impossibile comunicare con il Collector\n");
                         }
@@ -213,6 +222,8 @@ int runMasterThread(int n, int q, int t, int numFilePassati, string * files){
                     }
                 }
             }
+
+ chiusura:
             //distruggo la threadpool ma aspetto che siano completate le task pendenti
             if(!destroyWorkerpool(wpool,true)){
                 REMOVE_SOCKET();
@@ -222,6 +233,9 @@ int runMasterThread(int n, int q, int t, int numFilePassati, string * files){
             waitpid(process_id,NULL,0);
             REMOVE_SOCKET();
             free(argSH);
+            pthread_attr_destroy(&attr);
+            puts("Master in uscita");
+            stop=1; //termino anche il signal handler
             return EXIT_SUCCESS;
         }
     }
