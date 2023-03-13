@@ -43,3 +43,10 @@ previene la creazione di zombie.
        thread as detached.  When a detached thread terminates, its
        resources are automatically released back to the system without
        the need for another thread to join with the terminated thread.
+
+
+
+
+       The pthread_kill() function sends the signal sig to thread, a
+       thread in the same process as the caller.  The signal is
+       asynchronously directed to thread.

@@ -49,7 +49,7 @@ int compareNumber(const void*a, const void* b){
     long nA=strtol(A,&e,0);
     e=NULL;
     long nB=strtol(B,&e,0);
-    printf("Comparo %ld con %ld\n", nA,nB);
+    //printf("Comparo %ld con %ld\n", nA,nB);
     return nA>nB;
 
 }
