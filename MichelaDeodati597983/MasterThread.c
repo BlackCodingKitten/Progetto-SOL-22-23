@@ -60,45 +60,44 @@ static void* sigHandlerTask (void*arg){
         perror("pthread_detach(pthread_self) signal handeler");
         pthread_exit(NULL);
     }
-    sigHarg*sArg = (sigHarg*)arg;
-    sigset_t*set= ((sigHarg*)arg)->set;
-    
-    printf("%d VALORE DI STOP\n", (*(sArg->stop)));
+    sigHarg sArg = *((sigHarg*)arg);
+   
     int sig;
-    while (!(*(sArg->stop))){
+    //printf("%d VALORE DI STOP\n", *sArg.stop);
+    while (!(*sArg.stop)){
         //controllo che sigwait non ritorni un errore
-        if(sigwait(set, &sig)==-1){
+        if(sigwait((*((sigHarg*)arg)).set, &sig)==-1){
             errno=EINVAL;
             perror("SIGNAL_HANDLER-Masterthread.c-123: errore sigwait");
             exit(EXIT_FAILURE);
         }else{
-            puts("ho pricevuto un segnale");
+            //puts("ho pricevuto un segnale");
             switch (sig){
                 case SIGINT:
                 case SIGHUP:
-                case SIGTERM:
-                    //cambio il valore della guardia del while in masterthread
-                    *(sArg->stop)=1;
-                    
+                case SIGTERM:                  
                     //notifico la ricezione del segnale al Collector e poi chiudo la pipe
-                    if(writen(sArg->signal_pipe,"t", 2)==-1){
+                    if(writen(sArg.signal_pipe,"t", 2)==-1){
                         fprintf(stderr, "SIGNAL_HANDLER-Masterthread.c-131: errore writen sulla pipe");
                     }
-                    close(sArg->signal_pipe); 
-                    pthread_exit(NULL);          
+                    (*sArg.stop)=1;
+                    close(sArg.signal_pipe); 
+                    exit(EXIT_SUCCESS);         
                 case SIGUSR1:
                     //invio al collector il segnale di stampa
-                    if(writen(sArg->signal_pipe, "s", 2)==-1){
+                    if(writen(sArg.signal_pipe, "s", 2)==-1){
                         fprintf(stderr, "SIGNAL_HANDLER-Masterthread.c-137: errore writen sulla pipe");
                     }
+                    break;
                 default:
-                    continue;
+                    //puts("handler in uscita");
+                    pthread_exit(NULL);
                     break;
             }
         }
         
     }//end while(true)
-    printf("%d VALORE DI STOP\n", (*(sArg->stop)));
+    //printf("%d VALORE DI STOP\n", *sArg.stop);
     pthread_exit(NULL); 
 }
 
@@ -180,17 +179,14 @@ int runMasterThread(int n, int q, int t, int numFilePassati, string * files){
             runCollector(numFilePassati,s_pipe[0]);
         }else{
             //setto gli argomenti da passare al thread
-            sigHarg*argSH =(sigHarg*)malloc(sizeof(sigHarg));
-            argSH->set=&mask;
-            argSH->signal_pipe=s_pipe[1];
-            argSH->stop=stop;
+            sigHarg argSH ={stop, &mask, s_pipe[1]};
 
             //creo il thread signal handler in modalità detached
             pthread_t sigHandler;
             pthread_attr_t attr;
             pthread_attr_init(&attr);
             pthread_attr_setdetachstate(&attr,PTHREAD_CREATE_DETACHED);
-            if (pthread_create(&sigHandler, NULL, &sigHandlerTask, (void *)&argSH) != 0){
+            if (pthread_create(&sigHandler, &attr, &sigHandlerTask, (void *)&argSH) != 0){
                 fprintf(stderr, "errore nella creazione del sighandler\n");
                 destroyWorkerpool(wpool,false);
                 int err = writen(s_pipe[1],"t", 2);
@@ -199,7 +195,7 @@ int runMasterThread(int n, int q, int t, int numFilePassati, string * files){
                 }
                 REMOVE_SOCKET();
                 free(stop);
-                free(argSH);
+                
                 return EXIT_FAILURE;
             }
             
@@ -230,7 +226,7 @@ int runMasterThread(int n, int q, int t, int numFilePassati, string * files){
                         *stop=1;
                         pthread_attr_destroy(&attr);
                         free(stop);
-                        free(argSH);
+                        
                         REMOVE_SOCKET();
                         return EXIT_FAILURE;
                     }
@@ -244,17 +240,16 @@ int runMasterThread(int n, int q, int t, int numFilePassati, string * files){
                 *stop=1;
                 pthread_attr_destroy(&attr);
                 free(stop);
-                free(argSH);
+                
                 return EXIT_FAILURE;
             }
             //aspetto che termini il collector
             waitpid(process_id,NULL,0);
             REMOVE_SOCKET();
-            puts("Master in uscita");
-            *stop=1; //termino anche il signal handler
-            pthread_attr_destroy(&attr);
-            free(argSH);
+            //puts("Master in uscita");
+            pthread_kill(sigHandler,SIGKILL); //termino anche il signal handler
             free(stop);
+            pthread_attr_destroy(&attr);
             return EXIT_SUCCESS;
         }
     }

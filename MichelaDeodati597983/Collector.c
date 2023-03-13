@@ -61,6 +61,7 @@ void stampaRisultati (string * a, int dim){
     qsort(a, dim, sizeof(string), compare);
     for(int i=0; i<dim; i++){
         fprintf(stdout, "%s\n",a[i]);
+        //senza il flush non passa i test
         fflush(stdout);
     }
     
@@ -167,7 +168,7 @@ void runCollector (int numFile, int signal_pipe){
                             free(dataArray[l]);
                         }
                         //chiudo il processo 
-                        puts("Collector termina");
+                        //puts("Collector termina");
                         loop=false;                        
                     }
                 }
