@@ -76,7 +76,7 @@ static inline int readn(long fileDescriptor, void*buffer, size_t bufferSize){
     string buffPtr = (string)buffer;
     while (remain > 0){
         if((byteRead=read((int)fileDescriptor, buffPtr,remain))==-1){
-            if(errno=EINTR){
+            if(errno==EINTR){
                 //nessun errore, è stato lanciato un segnale mentre la system call era in corso
                 continue;
             }else{
@@ -109,7 +109,7 @@ static inline int writen(long fileDescriptor, void*buffer, size_t bufferSize){
     int writtenByte=0;
     while (remain >0){
         if((writtenByte=write((int)fileDescriptor,bufferPtr,remain))==-1){
-            if(errno=EINTR){
+            if(errno==EINTR){
                 continue;
             }else{
                 return -1;
