@@ -56,11 +56,6 @@ typedef char* string;
     }\
    }\
 
-#define CLOSE_SOCKET(fd_socket)\
-    if(close(fd_socket)!=0){\
-        perror("close()");\
-    } \
-
 /**
  * @function readn
  * @brief evita letture parziali
@@ -71,28 +66,29 @@ typedef char* string;
  * @return int -1 errore(setta errno), 0 durante la lettura leggo EOF, buffersize se la lettura termina con successo
  */
 static inline int readn(long fileDescriptor, void*buffer, size_t bufferSize){
-    size_t remain = bufferSize;
-    int byteRead = 0;
-    string buffPtr = (string)buffer;
-    while (remain > 0){
-        if((byteRead=read((int)fileDescriptor, buffPtr,remain))==-1){
-            if(errno==EINTR){
-                //nessun errore, è stato lanciato un segnale mentre la system call era in corso
-                continue;
+   size_t nleft;
+   ssize_t nread;
+   string ptr;
+
+   ptr=buffer;
+   nleft=bufferSize;
+   while(nleft>0){
+        if((nread=read(fileDescriptor,ptr,nleft))<0){
+            if(errno=EINTR){
+                nread=0; //chima di nuovo la read
             }else{
-                //ogni altro errno è errore
                 return -1;
             }
-        }
-        if(byteRead==0){
-            //EndOfFile (EOF)
-            return 0;
-        }
-        //decremento i byte rimanenti da leggere
-        remain -= byteRead;
-        buffPtr += byteRead;
-    }
-    return byteRead;
+        }else{
+            if(nread==0){
+                //EOF
+                break;
+            }
+       }
+       nleft-=nread;
+       ptr+=nread;
+   }
+   return(nleft-nread); //retunr >=0
 }
 
 /**
@@ -121,7 +117,7 @@ static inline int writen(long fileDescriptor, void*buffer, size_t bufferSize){
         remain -= writtenByte;
         bufferPtr += writtenByte;
     }
-    return writtenByte;
+    return 0;
 }
 
 /**

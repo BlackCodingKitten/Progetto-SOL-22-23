@@ -28,13 +28,15 @@
 #include "./WorkerPool.h"
 #include "./Util.h"
 
+
+
 /**
  * @brief ricavare la dimensione in byte del file 
  * 
  * @param file nome del file
  * @return long 
  */
-long getFileSize(FILE *file) {
+long getFileSize(FILE *file){
     long size;
 
     fseek(file, 0, SEEK_END);  // si posiziona alla fine del file
@@ -51,7 +53,7 @@ long getFileSize(FILE *file) {
  * @param pool workerpool_t
  */
 static void * wpoolWorker(void* pool){
-    workerpool_t * wpool =(workerpool_t*)pool;//cast della void*pool in una workerpool
+ workerpool_t * wpool =(workerpool_t*)pool;//cast della void*pool in una workerpool
     workertask_t task;//task generica
     //acquisisco la lock
     if(pthread_mutex_lock(&(wpool->lock))!=0){
@@ -61,7 +63,7 @@ static void * wpoolWorker(void* pool){
     
     while(true){
         //rimango in attesa di un segnale, controllo dei wakeups spuri
-        while((wpool->pendingQueueCount==0)&&(!wpool->exiting)){
+        if(!(wpool->exiting) && (wpool->pendingQueueCount==0)){
             pthread_cond_wait(&(wpool->cond), &(wpool->lock));
         }
         //la pool è in fase di uscita e non ci sono più task pendenti, il thread esce dal while true
@@ -73,11 +75,11 @@ static void * wpoolWorker(void* pool){
             }
             break;
         }else{
+            //diminuisco il numero di task in coda
+            --wpool->pendingQueueCount;
             //il thread prende una nuova task dalla testa della threadpool
             task.fun = wpool->pendingQueue[wpool->queueHead].fun;
             task.arg = wpool->pendingQueue[wpool->queueHead].arg;
-            //diminuisco il numero di task in coda
-            --wpool->pendingQueueCount;
             //sposto in avanti la testa di 1 
             ++wpool->queueHead;
             //se la testa è arrivata in fondo alla queue la riporto in cima;
@@ -86,15 +88,15 @@ static void * wpoolWorker(void* pool){
             }
             //incremento il numero di task attive eseguite dai thread
             ++wpool->activeTask;
-            //sveglio uno dei thread in attesa per eseguire la prossima task
-            pthread_cond_signal(&(wpool->cond));
+            //eseguo la funzione passata al thread:
+            (*(task.fun))(task.arg);
+
             //eseguo la unlock sulla coda
             if(pthread_mutex_unlock(&(wpool->lock))!=0){
                 fprintf(stderr, "WORKERPOOL: in wpoolWorker errore unlock della coda\n");
                 pthread_exit(NULL);
             }
-            //eseguo la funzione passata al thread:
-            (*(task.fun))(task.arg);
+
             //dopo aver eseguito la task rieseguo la lock sulla coda per poter modificare il valore delle task attive
             if(pthread_mutex_lock(&(wpool->lock))!=0){
                 fprintf(stderr, "WORKERPOOL: wpoolWorker, errore losck sulla mutex della coda delle task\n");
@@ -209,12 +211,13 @@ bool destroyWorkerpool (workerpool_t* wpool, bool waitTask){
         errno = EINVAL;
         return false;
     }
+    //setto lo stato di uscita della threadpool
+    wpool->exiting=true;
+    
     if(pthread_mutex_lock(&(wpool->lock))!=0){
         fprintf(stderr, "Errore fatale lock\n");
         return false;
     }
-    //setto lo stato di uscita della threadpool
-    wpool->exiting=true;
     //se sono in fase di uscita perchè ho finito le task da inviare alla queue  waitTsak=true altrimenti è un uscita forzata di emergenza.
     if(waitTask){
         //mando un segnale broadcast in modo da svegliare tutti i thread per terminare le task
@@ -247,11 +250,16 @@ bool destroyWorkerpool (workerpool_t* wpool, bool waitTask){
 }
 
 int addTask (workerpool_t* wpool, void* voidFile){
-    //controllo che la task non sia NULL e che la wpool non sia NULL
+   //controllo che la task non sia NULL e che la wpool non sia NULL
     if(wpool==NULL || voidFile == NULL){
         //setto errno
         errno=EINVAL;
         return -1;
+    }
+
+    if(wpool->exiting){
+        //la pool è in uscita non accetto nuove task
+        return 1;
     }
     
     //acquisico la lock
@@ -303,21 +311,17 @@ int addTask (workerpool_t* wpool, void* voidFile){
 }
 
 
+
 void leggieSomma (void*arg){
-    //creo la connessione tra il thread e il Collector
-    struct sockaddr_un addr;
-    strncpy(addr.sun_path,SOCKET_NAME,UNIX_PATH_MAX);
-    addr.sun_family=AF_UNIX;
-    int sock = socket(AF_UNIX,SOCK_STREAM,0);
-    if(sock == -1){
-        perror("Errore in leggie somma: socket()");
-        exit(EXIT_FAILURE);
-    }
-    
     //casto arg del thread nella path del file
-    string filePath = *(string*)arg;
+    if(arg==NULL){
+        return;
+    }
+    string filePath = (*(wArg*)arg).path;
+    
     //inizializzo la variabile somma
     long somma = 0;
+
     //apro il file in modalità lettura binaria
     FILE*file = fopen(filePath,"rb");
     //controllo che sia stato aperto correttamente
@@ -326,13 +330,13 @@ void leggieSomma (void*arg){
         fprintf(stderr, "Errore apertura file:%s\n",filePath);
         pthread_exit(NULL);
     }
+
     //ricavo quanti numeri ci sono nel file
     long fileDim=getFileSize(file)/ sizeof(long); 
     
     //alloco un array in cui inserisco tutti i valori dopo averli letti
     long* longInFile =(long*)malloc(sizeof(long)*fileDim);
 
-    
     //leggo tutti i valori del file e li salvo in fileArray
     if(fread(longInFile,sizeof(long),fileDim,file)<=0){
         fprintf(stderr,"leggieSomma: errore lettura valori nel file %s", filePath);
@@ -340,14 +344,16 @@ void leggieSomma (void*arg){
         free(longInFile);
         return;
     }
+    //chiudo il file dopo che ho finito di leggere
     fclose(file);
+
     //sommo il prodotto del valore per l'indice
     for(int i=0; i<fileDim; i++){
         somma=somma+(longInFile[i]*i);
     }
     //dopo aver calcolato la somma libero la memoria
     free(longInFile);
-
+    
     //alloco il buffer per scrivere della dimensione (numero massimo di caratteri di maxlong + la lunghezza massima della path del file)
     string buffer = malloc(sizeof(char)*FILE_BUFFER_SIZE+PATH_LEN);
     memset(buffer,'\0',FILE_BUFFER_SIZE+PATH_LEN);
@@ -356,30 +362,34 @@ void leggieSomma (void*arg){
     strcat(buffer, " ");
     strcat(buffer, filePath);
     
-    //attendo che il collector faccia l'accept
-    while(connect(sock, (struct sockaddr*)&addr, sizeof(addr)) == -1){
-        if(errno=ENOENT){
-            sleep(1);
-        }else{
-            perror("connect()");
-            CLOSE_SOCKET(sock);
-            free(buffer);
-            exit(EXIT_FAILURE);
-        }
-    }
-    //la spedisco al Collector con la write
-    if(writen(sock,buffer,strlen(buffer)+1)==-1){
-        perror("write()");
-        CLOSE_SOCKET(sock);
+    if(pthread_mutex_lock((*(wArg*)arg).socketMutex) != 0){
+        fprintf(stderr, "Errore lock socket\n");
         free(buffer);
-        REMOVE_SOCKET();
-        exit(EXIT_FAILURE);
+        return;
+    }else{
+        //lock eseguita correttamente
+        //spedisco al Collector con la writen i risultati
+        int sc;
+        if((sc=writen((*(wArg*)arg).sock, buffer ,strlen(buffer)+1))!=0){
+            perror("write()");
+            free(buffer);
+            return;
+        }
+        
+        //aspetto di ricevere OK dal collector prima di rilasciare la lock
+        memset(buffer,'\0',FILE_BUFFER_SIZE+PATH_LEN);
+        if(readn((*(wArg*)arg).sock,buffer,3)==-1){
+            fprintf(stderr, "il collector non ha ricevuto correttamente il file\n");
+        }
+        if(pthread_mutex_unlock((*(wArg*)arg).socketMutex)!=0){
+            fprintf(stderr, "impossibile fare la unlock della socket\n");
+            free(buffer);
+            return;
+        }
+        
     }
     //libero la memoria
-    if(buffer!=NULL){
-        free(buffer);
-    }
-    //al termine dell'invio al collector chiudo il client
-    CLOSE_SOCKET(sock);
+    free(buffer);
+    
 }
 

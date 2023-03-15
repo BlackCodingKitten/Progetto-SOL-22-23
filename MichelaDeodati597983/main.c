@@ -196,9 +196,39 @@ void findFileDir(const string dirName, string* saveFile, int index)
 }
 
 int main (int argc, string argv[]){
+    //ignoro il segnale sigpipe per evitare di essere terminato da una scrittura su socket
+    struct sigaction s;
+    memset(&s,0,sizeof(s));
+    s.sa_handler=SIG_IGN;
+    if((sigaction(SIGPIPE,&s,NULL))==-1){
+        perror("sigaction()");
+        return EXIT_FAILURE;
+    }
+    //maschero i segnali prima di ogni altra cosa
+    sigset_t mask;
+    if(sigemptyset(&mask)==-1){
+        perror("sigemptset()");
+        return  EXIT_FAILURE;
+    }
+    int errore=0;
+    errore=sigaddset(&mask, SIGINT);
+    errore=sigaddset(&mask, SIGTERM);
+    errore=sigaddset(&mask, SIGHUP);
+    errore=sigaddset(&mask, SIGUSR1);
+    errore=sigaddset(&mask, SIGUSR2);
+
+    if(errore==-1){
+        fprintf(stderr, "Errore nel sigaddset");
+        return EXIT_FAILURE;
+    }
+    //blocco i segnali per poterli gestire in  maniera custom nel Masterthread
+    if (pthread_sigmask(SIG_BLOCK, &mask, NULL) != 0){
+        //se da errore non setta errno
+        fprintf(stderr, "fatal error pthread_sigmask\n");
+        return EXIT_FAILURE;
+    }
     //esegue il controllo del numero di argomenti passati al main in maniera quantitativa
     InputCheck(argc, argv);
-
     //fileindex contiene la posizione dei file passati al main
     int fileIndex=1;
     int opt=0;
@@ -272,7 +302,7 @@ int main (int argc, string argv[]){
     }
 
     //chiamo la funzione che fa partire la threadpool, fa la fork e invoca il collector e crea il thread signal handler
-    int ext = runMasterThread(ntread,qsize,tdelay,numFile,files);
+    int ext = runMasterThread(ntread,qsize,tdelay,numFile,mask, files);
     //libero la memoria
     for(int i=0; i<numFile; i++){
         free(files[i]);

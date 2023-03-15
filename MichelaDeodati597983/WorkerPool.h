@@ -18,6 +18,11 @@
 
 #include "./Util.h"
 
+typedef struct wArg{
+    string path;                    //nome o path del file
+    int sock;                       //socket per comunicare col collector
+    pthread_mutex_t * socketMutex;  //mutex sulla socket
+}wArg;
 
 
 /**
@@ -90,6 +95,7 @@ bool destroyWorkerpool (workerpool_t* wpool, bool waitTask);
  * 
  * @param wpool oggetto workerpool
  * @param arg argomento della task del worker
+ * @param firs permette di capire se è la prima task inserita o nomake
  * @return int 0 se va tutto bene, 1 non ci sono thread liberi o la coda è piena,-1 fallisce la chimata, setta errno
  */
 int addTask (workerpool_t* wpool, void* arg);

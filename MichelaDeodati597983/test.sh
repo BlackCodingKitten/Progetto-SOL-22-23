@@ -74,16 +74,16 @@ fi
 # # esecuzione "rallentata" con 1 thread, dopo circa 5 secondi viene
 # # inviato il segnale SIGTERM (comando pkill) e si valuta l'exit status
 # # 
-# ./farm -n 1 -d testdir -q 1 -t 1000 file* 2>&1 > /dev/null &
-# pid=$!
-# sleep 5
-# pkill farm
-# wait $pid
-# if [[ $? != 0 ]]; then
-#     echo "test3 failed"
-# else
-#     echo "test3 passed"
-# fi
+./farm -n 1 -d testdir -q 1 -t 1000 file* 2>&1 > /dev/null &
+pid=$!
+sleep 5
+pkill farm
+wait $pid
+if [[ $? != 0 ]]; then
+    echo "test3 failed"
+else
+    echo "test3 passed"
+fi
 
 
 #

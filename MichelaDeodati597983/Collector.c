@@ -67,139 +67,152 @@ void stampaRisultati (string * a, int dim){
     
 }
 
-void runCollector (int numFile, int signal_pipe){
-    bool loop=true;
+void runCollector (int numFile){
+
+
     string dataArray[numFile];
     //inizializzo l'array di file da stampare
     for(int i=0; i<numFile; i++){
         //alloco la stringa che contiene la path e il risultato del calcolo sul file
         dataArray[i]=(string)malloc(sizeof(char)*(FILE_BUFFER_SIZE+PATH_LEN));
+        memset(dataArray[i],'\0',(FILE_BUFFER_SIZE+PATH_LEN));
     }
    
-    //creo la listensocket;
+    //creo socket
     struct sockaddr_un addr;
     strncpy(addr.sun_path,SOCKET_NAME,UNIX_PATH_MAX);
     addr.sun_family = AF_UNIX;
-    int listenSocket;
-    if((listenSocket=socket(AF_UNIX,SOCK_STREAM,0))==-1){
-        perror("listenSocket=socket(AF_UNIX,SOCK_STREAM,0)");
+    int sck=0;
+    if((sck=socket(AF_UNIX,SOCK_STREAM,0))==-1){
+        perror("sck=socket(AF_UNIX,SOCK_STREAM,0)");
         for(int l=0; l<numFile; l++){
             free(dataArray[l]);
         }
         REMOVE_SOCKET();
-        exit(EXIT_FAILURE);
+        _exit(EXIT_FAILURE);
     }
-    //bind della listen socket
-    if(bind(listenSocket,(struct sockaddr*)&addr, sizeof(addr))!=0){
-        perror("bind(farm.sck)");
-            CLOSE_SOCKET(listenSocket);
-            for(int l=0; l<numFile; l++){
-                free(dataArray[l]);
-            }
-            REMOVE_SOCKET();
-            exit(EXIT_FAILURE);
-    }
-    //listen socket in ascolto
-    if(listen(listenSocket, SOMAXCONN)==-1){
-        perror("listen()");
-            CLOSE_SOCKET(listenSocket);
-            for(int l=0; l<numFile; l++){
-                free(dataArray[l]);
-            }
-            REMOVE_SOCKET();
-            exit(EXIT_FAILURE);
-    }
-    //indice per scorrere il dataArray
-    int index=0;
-    //utilizzo la select perchè così posso mettere nel master set la pipe passata come argomento
-    fd_set set;
-    fd_set tmp_set;
-    FD_ZERO(&set);
-    FD_ZERO(&tmp_set);
-    FD_SET(listenSocket,&set);
-    FD_SET(signal_pipe, &set);//aggiungo la pipe al master set per aver 
 
-    //tengo traccia del file descriptor più grande
-    int fdmax=(listenSocket>signal_pipe)?listenSocket:signal_pipe;
-    while (loop){
-        
-        tmp_set=set;
-        if(select(fdmax+1,&tmp_set,NULL,NULL,NULL)==-1){
-            perror("Collector Select");
-            close(listenSocket);
-            close(signal_pipe);
-            for(int l=0; l<numFile; l++){
-                free(dataArray[l]);
+    while(connect(sck,(struct sockaddr*)&addr, sizeof(addr))==-1){
+        if(errno==ENOENT){
+            sleep(1);
+        }else{
+            fprintf(stderr, "Fallito tentativo di connessione con MasterThread\n");
+            for(int i=0;i<numFile;i++){
+                free(dataArray[i]);
             }
-            free(dataArray);
-            REMOVE_SOCKET();
+            close(sck);
             _exit(EXIT_FAILURE);
         }
+    }
+   
+    int index=0;//tiene traccia di quanti file sono stati scritti nel dataArray
+    int check =0;
+    bool readSignal=false;
+    while(true){
+       
+        string buffer = (string)malloc(sizeof(char)*(FILE_BUFFER_SIZE+PATH_LEN));
+        memset(buffer, '\0', (FILE_BUFFER_SIZE+PATH_LEN));
 
-        //adesso iteriamo per capire da quale file descriptor abbiamo ricevuto un messaggio
-        for(int fd=0; (fd<(fdmax+1)) && loop ;fd++){
-            if(FD_ISSET(fd,&tmp_set)){
-                int fd_conn=0;
-                if(fd==listenSocket){
-
-                    //nuova richiesta di connessione
-                    fd_conn=accept(listenSocket,NULL,NULL);
-                    if(fd_conn == -1){
-                        perror("collector accept()");
-                        close(listenSocket);
-                        for(int l=0; l<numFile; l++){
-                            free(dataArray[l]);
-                        }
-                        free(dataArray);
-                        REMOVE_SOCKET();
-                        _exit(EXIT_FAILURE);
-                    }                    
-                    if(readn(fd_conn, dataArray[index],(FILE_BUFFER_SIZE+PATH_LEN))==-1){
-                        fprintf(stderr, "COLLECTOR: ho ricevuto: %s", dataArray[index]);
-                    }
-                    index++;
-                    close(fd_conn);
-                    if(index==numFile){
-                        //ho letto tutti i file posso stampare e uscire
-                        stampaRisultati(dataArray,numFile);
-                        CLOSE_SOCKET(listenSocket);
-                        close(signal_pipe);
-                        for(int l=0; l<numFile; l++){
-                            free(dataArray[l]);
-                        }
-                        //chiudo il processo 
-                        //puts("Collector termina");
-                        loop=false;                        
-                    }
+        while((check=read(sck,buffer,(FILE_BUFFER_SIZE+PATH_LEN)))==-1){
+            if(errno=EINTR){
+                free(buffer);
+                string buffer = (string)malloc(sizeof(char)*(FILE_BUFFER_SIZE+PATH_LEN));
+                memset(buffer, '\0', (FILE_BUFFER_SIZE+PATH_LEN));
+            }else{
+                //errore insapettato nella read
+                fprintf(stderr, "Errore inaspettato nella lettura\n");
+                free(buffer);
+                for(int i=0; i<numFile; i++){
+                    free(dataArray[i]);
                 }
-                /**
-                 * manca la parte dell'else in cui tramite la select mi connetto ad una socket che è già registrata nel set,
-                 * questo perchè non ho necessità ne di registrare i client ne di rimuoverli in quanto ogni socket client viene 
-                 * gestita interamente dai workers, dall'apertura alla chiusura, quindi in questo caso non ho necessità di registrare tramite la FD_SET(fd_conn,&set)
-                 * 
-                 */
-                if(fd_conn==signal_pipe){
-                    char a[2];
-                    if(readn(signal_pipe,a,2)==-1){
-                        fprintf(stderr, "COLLECTOR-Collector.c Errore nella lettura del segnale ricevuto dal sig handler");
-                    }
-                    if(strcmp(a,"t")==0){
-                        close(signal_pipe);
-                        CLOSE_SOCKET(listenSocket);
-                        for(int l=0; l<numFile; l++){
-                            free(dataArray[l]);
-                        }
-                        loop=false;
-                    }
-                    if(strcmp(a,"s")==0){
-                        stampaRisultati(dataArray,index);
-                    }
-                }//end if gestione segnali
+                close(sck);
+                _exit(EXIT_FAILURE);
+
             }
         }
-    }//end while select
-    _exit(EXIT_SUCCESS);
-}
+        
+        if(check==0 && strlen(buffer)==0){
+            if(readSignal){
+                //è stato letto un segnale di terminazione e ora è stata chiusa la socket del Masterthread
+                close(sck);
+                for(int i=0; i<numFile; i++){
+                    if(i<index){
+                        puts(dataArray[i]);
+
+                    }
+                    //free(dataArray[i]);
+                }
+                _exit(EXIT_SUCCESS);
+            }else{
+                //è stata chiusa la Socket del masterthread significa che c'è stato un errore
+                free(buffer);
+                for(int i=0; i<numFile; i++){
+                    free(dataArray[i]);
+                }
+                close(sck);
+                _exit(EXIT_FAILURE);
+            }
+        }
+        if(strlen(buffer)>0){
+            //la lettura è avvenuta correttamente
+            if(strncmp(buffer, "stampa", strlen("stampa"))==0){
+                free(buffer);
+                if(writen(sck,"k",2)==-1){
+                    fprintf(stderr, "Impossibile raggiungere l'handler");
+                }
+                //è stato inviato sigusr1
+                string tmp[index];
+                if(index>0){
+                    for(int i=0; i<index;i++){
+                        tmp[i]=malloc(sizeof(char)*(1+strlen(dataArray[i])));
+                        strcpy(tmp[i],dataArray[i]);
+                    }
+                    stampaRisultati(tmp,index);
+                }
+                for(int i=0; i<index; i++){
+                    free(tmp[i]);
+                }
+                continue;
+            }
+            if(strncmp(buffer, "exit", strlen("exit"))==0){
+                free(buffer);
+                //è stato letto un segnale di terminazione
+                readSignal=true;
+                if(writen(sck,"k",2)==-1){
+                    fprintf(stderr, "Impossibile raggiungere l'handler");
+                }
+                continue;
+            }
+            //inserisco il risultato della lettura nel dataArray e rispondo 
+            strcpy(dataArray[index], buffer);
+            free(buffer);
+            if(writen(sck,"OK",3)!=0){
+                fprintf(stderr, "impossibile comunicare al worker che ho ricevuto il segnale\n");
+                free(buffer);
+                for(int i=0; i<numFile; i++){
+                    free(dataArray[i]);
+                }
+                close(sck);
+                _exit(EXIT_FAILURE);
+            }
+            index++;
+            if(index==numFile){
+                puts("stampa");
+                stampaRisultati(dataArray,numFile);
+                for(int i=0; i<numFile; i++){
+                    free(dataArray[i]);
+                }
+                close(sck);
+                _exit(EXIT_SUCCESS);
+            }else{
+                continue;
+            }
+        }
+    }
+    //non ci arriva mai
+    _exit(EXIT_FAILURE);
+   
+}//end Collector
 
 
 
