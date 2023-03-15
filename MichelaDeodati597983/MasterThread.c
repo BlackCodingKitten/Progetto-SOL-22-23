@@ -268,7 +268,7 @@ int runMasterThread(int n, int q, int t, int numFilePassati,sigset_t mask, strin
                     }
                 }
             }
-           puts("MASTERTHREAD: ESCO DAL WHILE");
+           
             //il collector è terminato prima del masterthread, c'è un errore, libero le risorse e ritorno EXIT_FAILURE
             if(collectorTerminato==process_id){
                 destroyWorkerpool(wpool,false);
