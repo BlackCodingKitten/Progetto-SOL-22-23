@@ -1,7 +1,7 @@
 /**
  * @file main.c
  * @author Michela deodati 597983
- * @brief 
+ * @brief main del progetto farm
  * @version 2.0
  * @date 20-03-2022
  * 
@@ -16,7 +16,8 @@
 #include <string.h>
 #include <unistd.h>
 #include <getopt.h>
-
+#include <sys/socket.h>
+#include<sys/un.h>
 
 
 #include "./Masterthread.h"
@@ -140,12 +141,35 @@ int main(int argc, string*argv){
             break;
         }
     }
+    //creo la socket farm.sck che mette in comunicazione i workers com il collector
+    int fd_conn =0;
+    struct sockaddr_un addr;
+    strncpy(addr.sun_path,SOCKET_NAME,UNIX_PATH_MAX);
+    addr.sun_family=AF_UNIX;
+    fd_conn=socket(AF_UNIX, SOCK_STREAM,0);
+    if(fd_conn==-1){
+        fprintf(stderr, "Errore nella creazione della Server_Socket\n");
+        REMOVE_SOCKET();
+        return EXIT_FAILURE;
+    }
+    //eseguo la bind della socket
+    if(bind(fd_conn,(struct sockaddr*)&addr, sizeof(addr))!=0){
+        //eseguo un tentativo per provare a rimuovere la socket se è già esistente 
+        REMOVE_SOCKET();
+        if(bind(fd_conn,(struct sockaddr*)&addr,sizeof(addr))!=0){
+            perror("bind(farm.sck)");
+            REMOVE_SOCKET();
+            return EXIT_FAILURE;
+        }
+    }
+
     //chiamo run masterthread per creare la threadpool, esguire le task e gestire i segnali 
     int exit_value=0;
-    /**int exit_value=runMasterthread(nthread, qsize, tdelay, fileindex, argv, &mask, fd_conn);***/
+    exit_value=runMasterthread(nthread, qsize, tdelay, file_index, argv, argc, dir_name,  &mask, fd_conn);
     if(dir_name!=NULL){
         free(dir_name);
     }
+    close(fd_conn);
     return exit_value; //return del valore di runMasterthread();
 }
 

@@ -8,6 +8,9 @@
  * @copyright Copyright (c) 2023
  * 
  */
+#ifndef _MASTERTHREAD_H_
+#define _MASTERTHREAD_H_
+
 
 #include "./Util.h"
 
@@ -23,4 +26,6 @@
  * @param fd_conn socket su cui i thread comunicano col collector
  * @return int 0 se è andato tutto bene, 1 se ci sono stati errori
  */
-int runMasterthread(int nthread, int qsize, int tdelay, int fileindex, string * argv, sigset_t * mask, int fd_conn);
+int runMasterthread(int nthread, int qsize, int tdelay, int fileindex, string * argv, int argc, string dir_name, sigset_t * mask, int fd_conn);
+
+#endif /*_MASTERTHREAD_H_*/
