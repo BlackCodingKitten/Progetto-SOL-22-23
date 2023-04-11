@@ -24,7 +24,7 @@
 #include "./Util.h"
 #include "./Masterthread.h"
 #include "./Collector.h"
-#include "./Workerpool.h"
+#include "./WorkerPool.h"
 
 typedef struct signal_handler_arg{
     int *stop;

@@ -17,6 +17,10 @@
 #include "./Util.h"
 
 typedef struct {
+    void * arg;
+}workertask_t;
+
+typedef struct {
     pthread_mutex_t queue_mutex; 
     pthread_mutex_t conn_mutex;
     pthread_cond_t queue_cond;
@@ -25,7 +29,7 @@ typedef struct {
     pthread_t * workers_array;
     int fd_socket;
     int numWorkers;
-    worker_arg * queue;
+    workertask_t * queue;
     int qsize;
     int head;
     int tail;
