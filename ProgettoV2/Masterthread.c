@@ -85,8 +85,8 @@ static void* signal_handler_task (void* arg){
                         }
                         ARG.wpool->exiting=true;
                         destroyWorkerPool(ARG.wpool,true);
+                        (*(ARG.stop)=1); //se cambio il valore di stop chiudo anche il collector
                         waitpid(ARG.childpid,NULL,0);
-                        (*(ARG.stop)=1);
                     }
                     //se stop != 0 significa che sono state mandate tutte le task in coda e si aspetta a terminazione della pool
                     return NULL;
@@ -239,17 +239,6 @@ int isFile(const string filePath){
 }
 
 
-
-
-
-
-
-
-
-
-
-
-
 /****RUN******MASTERTHREAD***/
 
 int runMasterthread(int nthread, int qsize, int tdelay, int fileindex, string * argv, int argc, string dir_name,  sigset_t * mask, int fd_conn){
@@ -279,6 +268,7 @@ int runMasterthread(int nthread, int qsize, int tdelay, int fileindex, string * 
     //se la fork è andata a buon fine 
     if(process_id==0){
         //sono nel processo figlio quindi avvio il Collector 
+        runcollector(stop);
     }else{
         //sono nel processo padre 
         //il collector è stato avviato accetto la connessione 
@@ -288,6 +278,8 @@ int runMasterthread(int nthread, int qsize, int tdelay, int fileindex, string * 
             REMOVE_SOCKET();
             return EXIT_FAILURE;
         }
+        //DEBUG 
+        puts("Collector accettato correttamente sulla socket");
         //creo la threadpool passandogli la collector_socket per permettere ai thread di comunicare
         workerpool_t* wpool=NULL;
         wpool=createWorkerPool(nthread, qsize, collector_socket);
@@ -315,18 +307,66 @@ int runMasterthread(int nthread, int qsize, int tdelay, int fileindex, string * 
         //itero fino a che stop!=1, fino a che non ho mandato tutti i file 
         //o se il Collector è terminato per un qualunque motivo inaspettato
         int closed_child=0;
+        
+
         while(!(*stop) && (closed_child=waitpid(process_id, NULL,WNOHANG))!=process_id){
+            worker_arg w_arg;
             if(fileindex >= argc){
                 //ho letto tutti i file passati come argomento è tempo di leggere la cartella 
                 if(dir_name != NULL){
+                    int amount=0;
+                    string*dir_files=(string*)malloc(sizeof(string)*100);
+                    for(int i=0; i <100; i++){
+                        dir_files[i]=NULL;
+                    }
                     //cerco nella cartella
+                    findFileDir(dir_name, dir_files,0);
+                    for(int i=0; dir_files[i]!=NULL; i++){
+                        amount = i;
+                    }
+                    fileindex=0;
+                    dir_files=realloc(dir_files, sizeof(string)*amount);
+                    for(fileindex=0; fileindex<amount ; fileindex++ ){  
+                        w_arg.file=dir_files[fileindex];
+                        w_arg.wpool=wpool;
+                        int check_add = addTask(wpool, (void*)&w_arg);
+                        switch (check_add){
+                            case 0:
+                                //è andtao tutto bene
+                                //controllo se deve dormire il masterthread
+                                int dormi=tdelay;
+                                while(dormi>0 && *stop==0){
+                                    //faccio dormire il thread un secondo e poi ricontrollo se devo eseguire cose
+                                    sleep(1);
+                                    --dormi;                   
+                                } 
+                            break;
+                            case 1:
+                                //coda piena 
+                                --fileindex;
+                                continue;
+                            break;
+                            case -1:
+                                //errore
+                                *stop=1;
+                                pthread_kill(signal_handler,SIGTERM);
+                                pthread_join(signal_handler,NULL);
+                                close(fd_conn);
+                                REMOVE_SOCKET();
+                                for(int f=0; f<amount; f++){
+                                    free(dir_files[f]);
+                                }free(dir_files);
+                                return EXIT_FAILURE;
+                        }
+                    }
+                    *stop=1;
+                    continue;
                 }else{
-                    //non ho passato alcuna cartella, quindi posso uscire
+                    //quindi posso uscire
                     *stop==1;
                     continue;
                 }
             }
-            worker_arg w_arg;
             //controllo che il file sia regolare prima di inserirlo in coda 
             if(isFile(argv[fileindex])){
                 w_arg.file=argv[fileindex];
@@ -388,6 +428,7 @@ int runMasterthread(int nthread, int qsize, int tdelay, int fileindex, string * 
             wpool->can_write=1;//ripermetto la scrittura
             pthread_cond_signal(&(wpool->conn_cond));
             pthread_mutex_unlock(&(wpool->conn_mutex));
+            close(fd_conn);
             //aspetto che termini il collector er chiudere tutto
             waitpid(process_id,NULL,0);
             *stop=1;
