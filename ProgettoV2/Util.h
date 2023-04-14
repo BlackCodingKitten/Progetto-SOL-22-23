@@ -8,7 +8,6 @@
  #include <unistd.h>
  #include <errno.h>
 
-
 #define SOCKET_NAME "farm.sck"
 #define BUFFER_SIZE 245
 #define UNIX_PATH_MAX 108
@@ -45,7 +44,7 @@ static inline int StringToNumber (const string s){
     return -1; //fallimento
 }
 
-ssize_t readn(int fd, void *ptr, size_t n) {  
+static inline ssize_t readn(int fd, void *ptr, size_t n) {  
    size_t   nleft;
    ssize_t  nread;
  
@@ -61,7 +60,7 @@ ssize_t readn(int fd, void *ptr, size_t n) {
    return(n - nleft); /* return >= 0 */
 }
 
-ssize_t writen(int fd, void *ptr, size_t n) {  
+static inline ssize_t writen(int fd, void *ptr, size_t n) {  
    size_t   nleft;
    ssize_t  nwritten;
  

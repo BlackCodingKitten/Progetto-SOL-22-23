@@ -8,4 +8,4 @@
  */
 
 
-void runcollector(int * stop);
+void runCollector(int * stop);

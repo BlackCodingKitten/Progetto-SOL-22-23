@@ -23,7 +23,7 @@
 #include <sys/un.h>
 
 #include "./WorkerPool.h"
-#include "./Util.h"
+
 
 /**
  * @brief cacola per ciascun file quanti long ci sono al suo interno
@@ -43,6 +43,150 @@ long getLongsAmount(FILE*filename){
     size=size / sizeof(long);
     return size;
 }
+
+/**
+ * @brief legge i valori dal file, li calcola e comunica col collector
+ * 
+ */
+static void *  calcolaFile (void * arg){
+    //casto l'argomento
+    worker_arg toDo = *((worker_arg*)arg);
+    //inizializzo il valore somma 
+    long somma=0;
+    //apri il file in "lettura binaria"
+    FILE*file=fopen(toDo.file, "rb");
+    //controllo che sia stato aperto correttamente
+    if(file == NULL){
+        perror(toDo.file);
+        return NULL;
+    }
+
+    //ricavo quanti numeri ci sono nel file
+    long fileDim = getLongsAmount(file);
+
+    //alloco un array in cui inserire turri i valori
+    long* longInFile =(long*)malloc(sizeof(long)*fileDim);
+
+    //leggo tutti i valori dal file e li salvo in un array
+    if(fread(longInFile,sizeof(long),fileDim,file)<=0){
+        fprintf(stderr,"leggieSomma: errore lettura valori nel file %s", toDo.file);
+        fclose(file);
+        free(longInFile);
+        return NULL;
+    }
+    //ho finito di leggere posso chiudere il file 
+    fclose(file);
+
+    //eseguo la somma
+    for (int i=0;  i< fileDim; i++){
+        somma=somma + (longInFile[i] + i);
+    }
+    //finito di calcolare la somma libero la memoria
+    free(longInFile);
+
+    string buffer = malloc(sizeof(char)*BUFFER_SIZE);
+    memset(buffer,'\0',BUFFER_SIZE);
+    //converto il valore della somma in stringa e poi gli accodouno spazio e la path del file per poi spedirlo al Collector
+    sprintf(buffer, "%ld", somma);
+    strcat(buffer, " ");
+    strcat(buffer, toDo.file);
+
+    //sono pronta per scrivere 
+    if(pthread_mutex_lock(&(toDo.wpool->conn_mutex))!=0){
+        fprintf(stderr, "Errore lock socket\n");
+        free(buffer);
+        return NULL;
+    }else{
+        //aspetto che il socket sia disponibile per la scrittura
+        while(toDo.wpool->can_write == 0){
+            pthread_cond_wait(&(toDo.wpool->conn_cond),&(toDo.wpool->conn_mutex));
+        }
+        toDo.wpool->can_write=0;
+        if(writen(toDo.wpool->fd_socket, buffer,  strlen(buffer)+1)<0){
+            fprintf(stderr, "Errore fatale scrittura ");
+            free(buffer);
+            exit(EXIT_FAILURE);
+        }
+        char ok[3];
+        if(readn(toDo.wpool->fd_socket, ok, 3) == -1){
+            fprintf(stderr, "messaggio non ricevuto dal collector\n");
+            free(buffer);
+            return NULL;
+        }
+        toDo.wpool->can_write=1;
+        pthread_cond_signal(&(toDo.wpool->conn_cond));
+        if(pthread_mutex_unlock(&(toDo.wpool->conn_mutex))!=0){
+            fprintf(stderr, "errore rilascio lock della socket");
+            free(buffer);
+            exit(EXIT_FAILURE);
+        }
+    }
+    //libero la memoria 
+    free(buffer);
+    return NULL;
+}
+
+/**
+ * @brief task di ciscuno dei thread nella threadpool che permette di estrarre un elemento della coda concorrente 
+ *          ed eseguire la task;
+ * 
+ * @param wpool threadpool
+ */
+static void * wpoolWork(void * wpool){
+    //per prima cosa casto la threadpool
+    workerpool_t * pool = (workerpool_t *)wpool;
+    workertask_t toPass; //generico argomento da passare alla funzione calcolaFile
+    //acquisisco la losck sulla coda
+    if(pthread_mutex_lock(&(pool->queue_mutex))!=0){
+        fprintf(stderr, "Errore acquisizione lock sulla coda delle taskn\n");
+        pthread_exit(NULL);
+    }
+
+    while (true){
+        //rimango in attesa di un segnale, controllo dei wakeup spuri
+        //attendo se la pool NON è in fase di uscita e non ci sono task
+        while((!(pool->exiting) && (pool->queue_remain == 0))){
+            pthread_cond_wait(&(pool->queue_cond), &(pool->queue_mutex));
+        }
+        //controllo se il thread si è svgliato perchè la pool è in fase di uscita
+        if(pool->exiting && (pool->queue_remain == 0)){
+            //threadpool in uscita, sono finite le task in coda 
+            if(pthread_mutex_unlock(&(pool->queue_mutex))!=0){
+                fprintf(stderr, "Errore unlock della mutex della coda\n");
+                pthread_exit(NULL);
+            }
+            pthread_exit(NULL);
+        }else{
+            //il thread prende una nuova task dalla testa della coda
+            toPass.arg= pool->queue[pool->head].arg;
+            //sposto la testa
+            ++pool->head;
+            if(pool->head >= pool->qsize){
+                //riporto la testa in cima 
+                pool->head=0;
+            }
+            //diminuisco il numero di task in coda
+            --pool->queue_remain;
+            
+            if(pthread_mutex_unlock(&(pool->queue_mutex))!=0){
+                fprintf(stderr, "Errore unlock della coda delle task \n");
+                pthread_exit(NULL);
+            }
+            //eseguo la funzione
+            calcolaFile(toPass.arg);
+
+            //rieseguo la lock
+            if(pthread_mutex_lock(&(pool->queue_mutex))!=0){
+                fprintf(stderr, "Errore lock della coda delle task\n");
+                pthread_exit(NULL);
+            }
+
+        }
+    }
+    //non ci arriva mai 
+    exit(EXIT_FAILURE);
+}
+
 
 /**
  * @brief Create a Worker Pool object
@@ -188,8 +332,8 @@ bool destroyWorkerPool(workerpool_t * wpool, bool wait_task ){
         }
     }
 
-    if(pthread_mutex_unlock(&wpool->queue_cond)!=0){
-        fprinf(stderr, "errore unlock durante la chiusura della pool\n");
+    if(pthread_mutex_unlock(&(wpool->queue_mutex))!=0){
+        fprintf(stderr, "errore unlock durante la chiusura della pool\n");
         return false;
     }
 
@@ -199,66 +343,7 @@ bool destroyWorkerPool(workerpool_t * wpool, bool wait_task ){
 
 }
 
-/**
- * @brief task di ciscuno dei thread nella threadpool che permette di estrarre un elemento della coda concorrente 
- *          ed eseguire la task;
- * 
- * @param wpool threadpool
- */
-static void * wpoolWork(void * wpool){
-    //per prima cosa casto la threadpool
-    workerpool_t * pool = (workerpool_t *)wpool;
-    workertask_t toPass; //generico argomento da passare alla funzione calcolaFile
-    //acquisisco la losck sulla coda
-    if(pthread_mutex_lock(&(pool->queue_mutex))!=0){
-        fprintf(stderr, "Errore acquisizione lock sulla coda delle taskn\n");
-        pthread_exit(NULL);
-    }
 
-    while (true){
-        //rimango in attesa di un segnale, controllo dei wakeup spuri
-        //attendo se la pool NON è in fase di uscita e non ci sono task
-        while((!(pool->exiting) && (pool->queue_remain == 0))){
-            pthread_cond_wait(&(pool->queue_cond), &(pool->queue_mutex));
-        }
-        //controllo se il thread si è svgliato perchè la pool è in fase di uscita
-        if(pool->exiting && (pool->queue_remain == 0)){
-            //threadpool in uscita, sono finite le task in coda 
-            if(pthread_mutex_unlock(&(pool->queue_mutex))!=0){
-                fprintf(stderr, "Errore unlock della mutex della coda\n");
-                pthread_exit(NULL);
-            }
-            pthread_exit(NULL);
-        }else{
-            //il thread prende una nuova task dalla testa della coda
-            toPass.arg= pool->queue[pool->head].arg;
-            //sposto la testa
-            ++pool->head;
-            if(pool->head >= pool->qsize){
-                //riporto la testa in cima 
-                pool->head=0;
-            }
-            //diminuisco il numero di task in coda
-            --pool->queue_remain;
-            
-            if(pthread_mutex_unlock(&(pool->queue_mutex))!=0){
-                fprintf(stderr, "Errore unlock della coda delle task \n");
-                pthread_exit(NULL);
-            }
-            //eseguo la funzione
-            calcolaFile(toPass.arg);
-
-            //rieseguo la lock
-            if(pthread_mutex_lock(&(pool->queue_mutex))!=0){
-                fprintf(stderr, "Errore lock della coda delle task\n");
-                pthread_exit(NULL);
-            }
-
-        }
-    }
-    //non ci arriva mai 
-    exit(EXIT_FAILURE);
-}
 
 /**
  * @brief aggiunge una tsk alla coda 
@@ -318,84 +403,3 @@ int addTask(workerpool_t * wpool, void * arg){
     return -1;
 }
 
-/**
- * @brief legge i valori dal file, li calcola e comunica col collector
- * 
- */
-static void *  calcolaFile (void * arg){
-    //casto l'argomento
-    worker_arg toDo = *((worker_arg*)arg);
-    //inizializzo il valore somma 
-    long somma=0;
-    //apri il file in "lettura binaria"
-    FILE*file=fopen(toDo.file, "rb");
-    //controllo che sia stato aperto correttamente
-    if(file == NULL){
-        perror(toDo.file);
-        return NULL;
-    }
-
-    //ricavo quanti numeri ci sono nel file
-    long fileDim = getLongsAmount(file);
-
-    //alloco un array in cui inserire turri i valori
-    long* longInFile =(long*)malloc(sizeof(long)*fileDim);
-
-    //leggo tutti i valori dal file e li salvo in un array
-    if(fread(longInFile,sizeof(long),fileDim,file)<=0){
-        fprintf(stderr,"leggieSomma: errore lettura valori nel file %s", toDo.file);
-        fclose(file);
-        free(longInFile);
-        return NULL;
-    }
-    //ho finito di leggere posso chiudere il file 
-    fclose(file);
-
-    //eseguo la somma
-    for (int i=0;  i< fileDim; i++){
-        somma=somma + (longInFile[i] + i);
-    }
-    //finito di calcolare la somma libero la memoria
-    free(longInFile);
-
-    string buffer = malloc(sizeof(char)*BUFFER_SIZE);
-    memset(buffer,'\0',BUFFER_SIZE);
-    //converto il valore della somma in stringa e poi gli accodouno spazio e la path del file per poi spedirlo al Collector
-    sprintf(buffer, "%ld", somma);
-    strcat(buffer, " ");
-    strcat(buffer, toDo.file);
-
-    //sono pronta per scrivere 
-    if(pthread_mutex_lock(&(toDo.wpool->conn_mutex))!=0){
-        fprintf(stderr, "Errore lock socket\n");
-        free(buffer);
-        return NULL;
-    }else{
-        //aspetto che il socket sia disponibile per la scrittura
-        while(toDo.wpool->can_write == 0){
-            pthread_cond_wait(&(toDo.wpool->conn_cond),&(toDo.wpool->conn_mutex));
-        }
-        toDo.wpool->can_write=0;
-        if(writen(toDo.wpool->fd_socket, buffer,  strlen(buffer)+1)<0){
-            fprintf(stderr, "Errore fatale scrittura ");
-            free(buffer);
-            exit(EXIT_FAILURE);
-        }
-        char ok[3];
-        if(readn(toDo.wpool->fd_socket, ok, 3) == -1){
-            fprintf(stderr, "messaggio non ricevuto dal collector\n");
-            free(buffer);
-            return NULL;
-        }
-        toDo.wpool->can_write=1;
-        pthread_cond_signal(&(toDo.wpool->conn_cond));
-        if(pthread_mutex_unlock(&(toDo.wpool->conn_mutex))!=0){
-            fprintf(stderr, "errore rilascio lock della socket");
-            free(buffer);
-            exit(EXIT_FAILURE);
-        }
-    }
-    //libero la memoria 
-    free(buffer);
-    return NULL;
-}

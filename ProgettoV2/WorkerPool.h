@@ -58,10 +58,7 @@ workerpool_t* createWorkerPool(int nthread, int qsize, int fd_conn);
  */
 int addTask(workerpool_t * wpool, void * arg);
 
-static void * wpoolWork (void * wpool);
-
 bool destroyWorkerPool(workerpool_t * wpool, bool wait_task );
 
-static void *  calcolaFile (void * arg);
 
 #endif /* WORKER_POOL_H_ */

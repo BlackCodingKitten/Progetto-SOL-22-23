@@ -103,7 +103,7 @@ void runCollector(int* stop){
                 free(buffer);
                 for(int i=0; i<index; i++){
                     free(dataArray[i]);
-                }free(dataArray);
+                }
                 free(buffer);
                 _exit(EXIT_SUCCESS);
             }
@@ -119,7 +119,7 @@ void runCollector(int* stop){
             free(buffer);
             for(int i=0; i<index; i++){
                 free(dataArray[i]);
-            }free(dataArray);
+            }
             free(buffer);
             _exit(EXIT_SUCCESS);
         }
@@ -136,7 +136,7 @@ void runCollector(int* stop){
             //la socket è stata chiusa 
             for(int i=0; i<index; i++){
                 free(dataArray[i]);
-            }free(dataArray);
+            }
             free(buffer);
             _exit(EXIT_SUCCESS);
         }
