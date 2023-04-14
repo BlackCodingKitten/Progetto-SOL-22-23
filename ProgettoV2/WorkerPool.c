@@ -153,6 +153,53 @@ static void freeWorkerPool(workerpool_t* wpool){
 }
 
 /**
+ * @brief 
+ * 
+ * @param wpool threadpool
+ * @param wait_task attendere la fine della task
+ * @return true distruzione della pool andata a buon fine
+ * @return false errore nella distruzione della pool
+ */
+bool destroyWorkerPool(workerpool_t * wpool, bool wait_task ){
+    if (wpool==NULL){
+        errno=EINVAL;
+        return false;
+    }
+    //setto lo stato di uscita della threadpool
+    wpool->exiting=true;
+
+    if(pthread_mutex_lock(&(wpool->queue_mutex))){
+        fprintf(stderr, "chiusura della pool Errore lock\n");
+        return false;
+    } 
+
+    //ontrollo se devo attendere l'attesa delle task pendenti
+    if(wait_task){
+        if(pthread_cond_broadcast(&(wpool->queue_cond))!=0){
+            if(pthread_mutex_unlock(&(wpool->queue_mutex))!=0){
+                fprintf(stderr,"Errore fatale nella chiusura della pool, impossibile svegliare altri thread\n");
+            }
+            return false;
+        }
+
+        for(int i=0; i<wpool->numWorkers; i++){
+            //faccio la join su ogni thread
+            pthread_join(wpool->workers_array[i],NULL);
+        }
+    }
+
+    if(pthread_mutex_unlock(&wpool->queue_cond)!=0){
+        fprinf(stderr, "errore unlock durante la chiusura della pool\n");
+        return false;
+    }
+
+    //libero le risorse della pool
+    freeWorkerPool(wpool);
+    return true;
+
+}
+
+/**
  * @brief task di ciscuno dei thread nella threadpool che permette di estrarre un elemento della coda concorrente 
  *          ed eseguire la task;
  * 
@@ -299,7 +346,7 @@ static void *  calcolaFile (void * arg){
         fprintf(stderr,"leggieSomma: errore lettura valori nel file %s", toDo.file);
         fclose(file);
         free(longInFile);
-        return;
+        return NULL;
     }
     //ho finito di leggere posso chiudere il file 
     fclose(file);
@@ -322,7 +369,7 @@ static void *  calcolaFile (void * arg){
     if(pthread_mutex_lock(&(toDo.wpool->conn_mutex))!=0){
         fprintf(stderr, "Errore lock socket\n");
         free(buffer);
-        return;
+        return NULL;
     }else{
         //aspetto che il socket sia disponibile per la scrittura
         while(toDo.wpool->can_write == 0){
@@ -338,7 +385,7 @@ static void *  calcolaFile (void * arg){
         if(readn(toDo.wpool->fd_socket, ok, 3) == -1){
             fprintf(stderr, "messaggio non ricevuto dal collector\n");
             free(buffer);
-            return;
+            return NULL;
         }
         toDo.wpool->can_write=1;
         pthread_cond_signal(&(toDo.wpool->conn_cond));
@@ -350,4 +397,5 @@ static void *  calcolaFile (void * arg){
     }
     //libero la memoria 
     free(buffer);
+    return NULL;
 }
