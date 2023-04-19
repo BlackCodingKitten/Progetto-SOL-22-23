@@ -53,61 +53,32 @@ long getFileSize(FILE *file){
  * @param pool workerpool_t
  */
 static void * wpoolWorker(void* pool){
- workerpool_t * wpool =(workerpool_t*)pool;//cast della void*pool in una workerpool
+    workerpool_t * wpool =(workerpool_t*)pool;//cast della void*pool in una workerpool
     workertask_t task;//task generica
     //acquisisco la lock
     if(pthread_mutex_lock(&(wpool->lock))!=0){
         fprintf(stderr, "WORKERPOOL: in funzione wpoolWorker: errore acqusizione lock\n");
         pthread_exit(NULL);
+    }else{
+        for(;;){
+            //in attesa di un signal, evito wakes up spuri
+            while((wpool->pendingQueueCount == 0) && (wpool->exiting == false)){
+                pthread_cond_wait(&(wpool->cond), &(wpool->lock));
+            }
+
+            //controllo se sono in fase di uscita
+            if(wpool->exiting=true) {
+                if(!wpool->pendingQueueCount){
+                    if(pthread_mutex_unlock(&(wpool->lock))!=0){
+                        fprintf(stderr, "Errore unlock coda delle task ");
+                        return NULL;
+                    }
+                    
+                }
+            }
+        }
     }
-    
-    while(true){
-        //rimango in attesa di un segnale, controllo dei wakeups spuri
-        if(!(wpool->exiting) && (wpool->pendingQueueCount==0)){
-            pthread_cond_wait(&(wpool->cond), &(wpool->lock));
-        }
-        //la pool è in fase di uscita e non ci sono più task pendenti, il thread esce dal while true
-        if(wpool->exiting && (wpool->pendingQueueCount==0)){
-            //eseguo la unlock
-            if(pthread_mutex_unlock(&(wpool->lock))!=0){
-                fprintf(stderr, "WORKERPOOL: in wpoolWorker errore unlock della coda in fase di uscita\n");
-                pthread_exit(NULL);
-            }
-            break;
-        }else{
-            //diminuisco il numero di task in coda
-            --wpool->pendingQueueCount;
-            //il thread prende una nuova task dalla testa della threadpool
-            task.fun = wpool->pendingQueue[wpool->queueHead].fun;
-            task.arg = wpool->pendingQueue[wpool->queueHead].arg;
-            //sposto in avanti la testa di 1 
-            ++wpool->queueHead;
-            //se la testa è arrivata in fondo alla queue la riporto in cima;
-            if(wpool->queueHead == wpool->queueSize){
-                wpool->queueHead = 0;
-            }
-            //incremento il numero di task attive eseguite dai thread
-            ++wpool->activeTask;
-            //eseguo la funzione passata al thread:
-            (*(task.fun))(task.arg);
-
-            //eseguo la unlock sulla coda
-            if(pthread_mutex_unlock(&(wpool->lock))!=0){
-                fprintf(stderr, "WORKERPOOL: in wpoolWorker errore unlock della coda\n");
-                pthread_exit(NULL);
-            }
-
-            //dopo aver eseguito la task rieseguo la lock sulla coda per poter modificare il valore delle task attive
-            if(pthread_mutex_lock(&(wpool->lock))!=0){
-                fprintf(stderr, "WORKERPOOL: wpoolWorker, errore losck sulla mutex della coda delle task\n");
-                pthread_exit(NULL);
-            }
-            //ho eseguito la task, decremento il numero di quelle attive
-            --wpool->activeTask;
-        }
-    }//end while 
-    //non serve esguire la unlock perchè l'ho eseguita prima di uscire dal while, concludo la task del thread con status NULL
-    pthread_exit(NULL);
+        
 }
 
 
@@ -234,38 +205,45 @@ bool destroyWorkerpool (workerpool_t* wpool, bool waitTask){
         errno = EINVAL;
         return false;
     }
-    //setto lo stato di uscita della threadpool
-    wpool->exiting=true;
     
     if(pthread_mutex_lock(&(wpool->lock))!=0){
         fprintf(stderr, "Errore fatale lock\n");
         return false;
-    }
-    //se sono in fase di uscita perchè ho finito le task da inviare alla queue  waitTsak=true altrimenti è un uscita forzata di emergenza.
-    if(waitTask){
-        //mando un segnale broadcast in modo da svegliare tutti i thread per terminare le task
-        if(pthread_cond_broadcast(&(wpool->cond))!=0){
+    }else{
+        //setto lo stato di uscita della threadpool
+        wpool->exiting=true;
+        //se sono in fase di uscita perchè ho finito le task da inviare alla queue  waitTsak=true altrimenti è un uscita forzata di emergenza.
+        if(waitTask){
+            //mando un segnale broadcast in modo da svegliare tutti i thread per terminare le task
+            if(pthread_cond_broadcast(&(wpool->cond))!=0){
+                if(pthread_mutex_unlock(&(wpool->lock))!=0){
+                    fprintf(stderr,"Errore Fatale unlock\n");
+                    return false;
+                }
+                return false;
+            }
+            //unlock della queue
             if(pthread_mutex_unlock(&(wpool->lock))!=0){
                 fprintf(stderr,"Errore Fatale unlock\n");
                 return false;
             }
-        }
-        //unlock della queue
-        if(pthread_mutex_unlock(&(wpool->lock))!=0){
-            fprintf(stderr,"Errore Fatale unlock\n");
-            return false;
-        }
-        for(int i=0; i<wpool->numWorkers;i++){
-            //faccio la join con tutti i thread per attendere la terminazione delle task già inserite in coda
-            if(pthread_join(wpool->workers[i].wid,NULL)!=0){
-                errno=EFAULT;
-                if(pthread_mutex_unlock(&(wpool->lock))!=0){
-                    fprintf(stderr,"Errore Fatale unlock riga 204 Workerpool.c\n");
+            for(int i=0; i<wpool->numWorkers;i++){
+                //faccio la join con tutti i thread per attendere la terminazione delle task già inserite in coda
+                if(pthread_join(wpool->workers[i].wid,NULL)!=0){
+                    errno=EFAULT;
+                    if(pthread_mutex_unlock(&(wpool->lock))!=0){
+                        fprintf(stderr,"Errore Fatale unlock riga 204 Workerpool.c\n");
+                    }
+                    return false;
                 }
+            }
+        }else{
+            if(pthread_mutex_unlock(&(wpool->lock))!=0){
+                fprintf(stderr, "Errore unlock della coda delle task in destroy workerpool\n");
                 return false;
             }
         }
-    }
+    }//fine else lock
 
     freeWorkPool(wpool);
     //ho liberato la memoria della wpool
@@ -280,56 +258,54 @@ int addTask (workerpool_t* wpool, void* voidFile){
         return -1;
     }
 
-    if(wpool->exiting){
-        //la pool è in uscita non accetto nuove task
-        return 1;
-    }
-    
     //acquisico la lock
     if(pthread_mutex_lock(&(wpool->lock))!=0){
         fprintf(stderr, "Workerpool.c errore fatale lock");
         return -1;
-    }
-    int qSize = wpool->queueSize;
-    //controllo se la coda è piena o se si è in fase di uscita non accetto più alcuna task
-    if((wpool->pendingQueueCount >= qSize || wpool->exiting) ){
-        //unlock
-        if(pthread_mutex_unlock(&(wpool->lock))!=0){
-            fprintf(stderr, "Workerpool.c errore unlock");
+    }else{
+        if(wpool->exiting || wpool->queueSize<=wpool->pendingQueueCount || wpool->activeTask==wpool->numWorkers){
+            //la pool è in uscita non accetto nuove task
+            //la coda è piena non si accettano nuove task
+            //tutti i thread sono occupati non sia ccettano nuove task
+            if(pthread_mutex_unlock(&(wpool->lock))!=0){
+                fprintf(stderr,"Errore unlock della coda delle task in add Task\n");
+                return -1;
+            }
+            return 1;
+        }
+        
+        //inserico in coda la nuova task
+        wpool->pendingQueue[wpool->queueTail].arg=voidFile;
+        fprintf(stdout, "Aggiungo in coda la task %s", (*(wArg*)voidFile).path);
+        //incremento il numero delle task in coda
+        ++wpool->pendingQueueCount;
+        //incremento il valore del puntatore alla fine della coda
+        ++wpool->queueTail;
+        fprintf(stdout, ", in posizione %d\n", wpool->queueTail);
+        fflush(stdout);
+        //se il puntatore alla fine della coda supera la dimensione della coda, sovrescrivo le task di testa 
+        if(wpool->queueTail >= wpool->queueSize){
+            wpool->queueTail=0;
+            puts("Riporto la coda a 0");
+        }
+
+        if(pthread_cond_signal(&(wpool->cond))!=0){
+            //rilascio la lock
+            if(pthread_mutex_unlock(&(wpool->lock))!=0){
+                fprintf(stderr," fallimento unlock di emergenza dopo il fallimneot della signal in add task\n");
+            }
+            //ritorno -1 in ogni caso
             return -1;
         }
-        //uscita col valore che indica queue piena in  modo da non far aggiungere altre task
         
-        return 1;
-    }
-    //inserico in coda la nuova task
-    wpool->pendingQueue[wpool->queueTail].arg=voidFile;
-    //incremento il numero delle task in coda
-    ++wpool->pendingQueueCount;
-    //incremento il vlaore del puntatore alla fine della coda
-    ++wpool->queueTail;
-    //se il puntatore alla fine della coda supera la dimensione della coda, sovreascrivo le task di testa 
-    if(wpool->queueTail >= qSize){
-        
-        wpool->queueTail=0;
-    }
-
-    
-    if(pthread_cond_signal(&(wpool->cond))== -1){
-        //rilascio la lock
+        //se ho mandato correttamente il segnale rilascio la lock e return 0
         if(pthread_mutex_unlock(&(wpool->lock))!=0){
-            fprintf(stderr," fallimento unlock di emergenza dopo il fallimneot della signal in add task\n");
+            fprintf(stderr, "Errore unlock riga 292 Workerpool.c\n");
+            return -1;
         }
-        //ritorno -1 in ogni caso
-        return -1;
+
     }
-    
-    //se ho mandato correttamente il segnale rilascio la lock e return 0
-    if(pthread_mutex_unlock(&(wpool->lock))!=0){
-        fprintf(stderr, "Errore unlock riga 292 Workerpool.c\n");
-        return -1;
-    }
-    
+    //tutto è andato a buon fine
     return 0;
 }
 
@@ -342,6 +318,7 @@ void leggieSomma (void*arg){
     }
 
     string filePath = (*(wArg*)arg).path;
+    fprintf(stderr,"Lavoro il file : %s\n", filePath);
     workerpool_t* wpool = (*(wArg*)arg).pool;
     
     //inizializzo la variabile somma
@@ -420,7 +397,7 @@ void leggieSomma (void*arg){
                fprintf(stderr, "errore unlock socet\n");
                exit(EXIT_FAILURE);
             }
-            return NULL;
+            return;
         }
         wpool->can_write=true;
         if(pthread_cond_signal(&(wpool->conn_cond))!=0){

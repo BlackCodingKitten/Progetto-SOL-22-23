@@ -66,7 +66,6 @@ static void* sigHandlerTask (void*arg){
             REMOVE_SOCKET();
             exit(EXIT_FAILURE);
         }else{
-            puts("ho ricevuto un segnale");
             switch (sig){
                 case SIGINT:
                 case SIGHUP:
@@ -135,16 +134,14 @@ static void* sigHandlerTask (void*arg){
                             fprintf(stderr,  "impossibile eseguire la unlock della connessione\n");
                             exit(EXIT_FAILURE);
                         }
-                        *(sArg.stop)=1;
-                        pthread_exit(NULL);
                     }
                     break;
                 default:
                     fprintf(stderr, "Catturato segnale non riconosciuto, errore\n");
                     exit(EXIT_FAILURE);
                     break;
-            }
-        }
+            }//end switch
+        }//end else sigwait
         
     }//end while(true)
     return NULL; 
@@ -234,7 +231,7 @@ int runMasterThread(int n, int q, int t, int numFilePassati, sigset_t mask, stri
             }
 
             int index=0; //indice per scorrere files
-            pid_t collectorTerminato;
+            int collectorTerminato =0;
 
             //itero fino a che stop!=1, fino a che non ho mandato tutti i file o se il Collector è terminato per un qualunque motivo inaspettato
             while(!(*stop) && ((collectorTerminato=waitpid(process_id,NULL,WNOHANG))!=process_id)){
