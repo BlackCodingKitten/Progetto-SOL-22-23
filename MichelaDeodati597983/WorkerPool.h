@@ -30,17 +30,6 @@ typedef struct workerthread_t{
     pthread_t wid;
 }workerthread_t;
 
-/**
- * @struct workertask_t
- * @brief task che devono eseguire i thread worker
- * 
- * @var funPtr: Puntetore alla funzione da eseguire
- * @var arg: argomento della funzione 
-*/
-typedef struct wT {
-    void(*fun)(void*); //puntatore alla funzione da eseguire
-    void* arg;  //filepath che viene passata dal masterthread
-}workertask_t;
 
 /**
  * @struct workerpool
@@ -55,7 +44,7 @@ typedef struct workerpool_t{
     pthread_cond_t  cond;                   //usata per notificare un worker
     workerthread_t*      workers;           //array di worker id
     int             numWorkers;             //size dell'array workers
-    workertask_t*   pendingQueue;           //coda interna usata per le task
+    string *          pendingQueue;                  //coda interna usata per le task
     int             queueSize;              //massima size della coda, se settata a -1 non ccetta task pendenti
     int             activeTask;             //numero di task che sono attualmente in esecuzione dai workers
     int             queueHead;              //testa della coda
@@ -101,7 +90,7 @@ bool destroyWorkerpool (workerpool_t* wpool, bool waitTask);
  * @param firs permette di capire se è la prima task inserita o nomake
  * @return int 0 se va tutto bene, 1 non ci sono thread liberi o la coda è piena,-1 fallisce la chimata, setta errno
  */
-int addTask (workerpool_t* wpool, void* arg);
+int addTask (workerpool_t* wpool, string file);
 
 /**
  * @brief task del thread worker che fa i calcoli sul file

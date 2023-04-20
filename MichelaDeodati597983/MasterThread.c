@@ -237,8 +237,7 @@ int runMasterThread(int n, int q, int t, int numFilePassati, sigset_t mask, stri
             while(!(*stop) && ((collectorTerminato=waitpid(process_id,NULL,WNOHANG))!=process_id)){
                 //se non è stato passato alcun -t dorme 0
                 //creo setto gli argomenti da mettere in coda
-                wArg workerArg = {files[index], wpool};
-                //printf("\nMASTERTHREAD:");puts(files[index]);puts("\n");
+                
                 if(t!=0){
                     //devo aspettare tot secondi prima di poter aggiungere una task
                     for(int time_delay=1; time_delay<=t; time_delay++){
@@ -263,12 +262,12 @@ int runMasterThread(int n, int q, int t, int numFilePassati, sigset_t mask, stri
 
                     }
                 }
-                int check = addTask(wpool, (void*)&workerArg);
+                int check = addTask(wpool, files[index]);
                 
                 if(check==0){
                     //incremento l'indice solo se riesco ad assegnare correttamente la task alla threadpool
                     ++index;
-                    if(index==numFilePassati){
+                    if(index>=numFilePassati){
                         *stop=1;
                         continue;
                     }

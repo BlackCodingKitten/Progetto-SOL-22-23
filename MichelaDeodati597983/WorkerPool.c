@@ -54,7 +54,7 @@ long getFileSize(FILE *file){
  */
 static void * wpoolWorker(void* pool){
     workerpool_t * wpool =(workerpool_t*)pool;//cast della void*pool in una workerpool
-    workertask_t task;//task generica
+    wArg task; //task generica
     //acquisisco la lock
     if(pthread_mutex_lock(&(wpool->lock))!=0){
         fprintf(stderr, "WORKERPOOL: in funzione wpoolWorker: errore acqusizione lock\n");
@@ -67,22 +67,64 @@ static void * wpoolWorker(void* pool){
             }
 
             //controllo se sono in fase di uscita
-            if(wpool->exiting=true) {
-                if(!wpool->pendingQueueCount){
+            if(wpool->exiting == true) {
+                if(wpool->pendingQueueCount == 0){
                     if(pthread_mutex_unlock(&(wpool->lock))!=0){
                         fprintf(stderr, "Errore unlock coda delle task ");
                         return NULL;
                     }
-                    
+                    pthread_exit(NULL);
                 }
             }
-        }
-    }
+
+            fflush(stdout);
+            fprintf(stdout, "Stampa della Coda\n\n");
+            for(int c=0; c<wpool->queueSize; c++){
+                fprintf(stdout, "%d-> %s\n", c, wpool->pendingQueue[c]);
+            }puts("\n");
+            fflush(stdout);
+            //nuovo task
+            task.path=malloc(sizeof(char)* (1+strlen(wpool->pendingQueue[wpool->queueHead])));
+            memset(task.path,'\0', (1+strlen(wpool->pendingQueue[wpool->queueHead])));
+            strcpy(task.path, wpool->pendingQueue[wpool->queueHead]);
+            task.pool=0;           
+
+            fprintf(stdout, "Posizione della coda %d, estraggo %s ", wpool->queueHead, task.path);
+            fflush(stdout);
+
+            wpool->queueHead++;
+            if(wpool->queueHead >= wpool->queueSize){
+                wpool->queueHead=0;
+            }
+            fprintf(stdout,"nuovo valore della testa %d\n", wpool->queueHead);
+            wpool->activeTask--;
+            if(pthread_mutex_unlock(&(wpool->lock))!=0){
+                fprintf(stderr, "Errore unlock coda in wpoolworker");
+                exit(EXIT_FAILURE);
+            }
+            puts("eseguo leggie somma ");
+            leggieSomma((void*)&task);
+            free(task.path);
+            puts("finito di eseguire leggi e somma");
+            if(pthread_mutex_lock(&(wpool->lock))!=0){
+                fprintf(stderr, "impossibile acquisire la lock della coda\n");
+                pthread_exit(NULL);
+            }
+
+        }//fine for (while true)
+    }//fine else lock
         
 }
 
 
-
+/**
+ * @brief crea e inizializza la theradpool
+ * 
+ * @param numWorkers numero di thread sempre attivi
+ * @param queueSize dimensione della coda delle task
+ * @param fd_socket socket con cui i thead comunicano col collecor
+ * @return workerpool_t*  o NULL in caso di errore
+ */
 workerpool_t * createWorkerpool (int numWorkers, int queueSize, int fd_socket){
 
     //questo controllo è quasi superfluo ma la sicurezza non è mai troppa
@@ -119,7 +161,7 @@ workerpool_t * createWorkerpool (int numWorkers, int queueSize, int fd_socket){
     }
     
     //alloco la queue di workertask
-    if((wpool->pendingQueue=(workertask_t*)malloc(sizeof(workertask_t)*queueSize))==NULL){
+    if((wpool->pendingQueue=(string*)malloc(sizeof(string)*queueSize))==NULL){
         //se fallisce la malloc
         perror("Fallisce l'allocazione della pendingQueue nella workerpool");
         //libero la memoria
@@ -129,7 +171,7 @@ workerpool_t * createWorkerpool (int numWorkers, int queueSize, int fd_socket){
     }
     //inizializzo tutte le funzioni della queue a leggieSomma()
     for(int i=0; i<queueSize; i++){
-        (wpool->pendingQueue)[i].fun = leggieSomma;
+        wpool->pendingQueue[i]=(string)malloc(sizeof(char)*245);
     }
     
     //inizializzo la mutex della threadpool
@@ -190,6 +232,10 @@ workerpool_t * createWorkerpool (int numWorkers, int queueSize, int fd_socket){
 static void freeWorkPool(workerpool_t* wpool){
     if(wpool->workers!=NULL){
         free(wpool->workers);
+        //libero ciascun elemento della coda e poi la coda stessa
+        for(int i=0; i<wpool->queueSize; i++){
+            free(wpool->pendingQueue[i]);
+        }
         free(wpool->pendingQueue);
         pthread_mutex_destroy(&(wpool->lock));
         pthread_cond_destroy(&(wpool->cond));
@@ -200,6 +246,14 @@ static void freeWorkPool(workerpool_t* wpool){
     }
 }
 
+/**
+ * @brief elimina la threadpool
+ * 
+ * @param wpool threadpool da eliminare
+ * @param waitTask bool che decide se vanno prima finite di elaborare le task in coda
+ * @return true pool elimnata correttamente
+ * @return false pool eliminata in maiera non corretta fallimento
+ */
 bool destroyWorkerpool (workerpool_t* wpool, bool waitTask){
     if(wpool==NULL){
         errno = EINVAL;
@@ -250,9 +304,9 @@ bool destroyWorkerpool (workerpool_t* wpool, bool waitTask){
     return true;
 }
 
-int addTask (workerpool_t* wpool, void* voidFile){
-   //controllo che la task non sia NULL e che la wpool non sia NULL
-    if(wpool==NULL || voidFile == NULL){
+int addTask (workerpool_t* wpool, string file){
+   //controllo  che la wpool non sia NULL
+    if(wpool==NULL){
         //setto errno
         errno=EINVAL;
         return -1;
@@ -275,13 +329,15 @@ int addTask (workerpool_t* wpool, void* voidFile){
         }
         
         //inserico in coda la nuova task
-        wpool->pendingQueue[wpool->queueTail].arg=voidFile;
-        fprintf(stdout, "Aggiungo in coda la task %s", (*(wArg*)voidFile).path);
+        memset(wpool->pendingQueue[wpool->queueTail], '\0', 254);
+        strcpy(wpool->pendingQueue[wpool->queueTail], file);
+        
+        fprintf(stdout, "ho passato la task %s, aggiungo in coda la task %s", file, wpool->pendingQueue[wpool->queueTail]);
         //incremento il numero delle task in coda
         ++wpool->pendingQueueCount;
         //incremento il valore del puntatore alla fine della coda
-        ++wpool->queueTail;
         fprintf(stdout, ", in posizione %d\n", wpool->queueTail);
+        ++wpool->queueTail;
         fflush(stdout);
         //se il puntatore alla fine della coda supera la dimensione della coda, sovrescrivo le task di testa 
         if(wpool->queueTail >= wpool->queueSize){
