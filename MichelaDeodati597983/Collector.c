@@ -60,7 +60,7 @@ void stampaRisultati (string * a, int dim){
     fflush(stdout);
     qsort(a, dim, sizeof(string), compare);
     for(int i=0; i<dim; i++){
-        fprintf(stdout, "%s\n",a[i]);
+        fprintf(stdout, "COLLECTOR:%s\n",a[i]);
         //senza il flush non passa i test
         fflush(stdout);
     }
@@ -74,8 +74,8 @@ void runCollector (int numFile){
     //inizializzo l'array di file da stampare
     for(int i=0; i<numFile; i++){
         //alloco la stringa che contiene la path e il risultato del calcolo sul file
-        dataArray[i]=(string)malloc(sizeof(char)*(FILE_BUFFER_SIZE+PATH_LEN));
-        memset(dataArray[i],'\0',(FILE_BUFFER_SIZE+PATH_LEN));
+        dataArray[i]=(string)malloc(sizeof(char)*PATH_LEN);
+        memset(dataArray[i],'\0',PATH_LEN);
     }
    
     //creo socket
@@ -106,104 +106,55 @@ void runCollector (int numFile){
    
     int index=0;//tiene traccia di quanti file sono stati scritti nel dataArray
     int check =0;
-    bool readSignal=false;
+    string buffer =(string)malloc(sizeof(char)*PATH_LEN);
+    
     while(true){
-       
-        string buffer = (string)malloc(sizeof(char)*(FILE_BUFFER_SIZE+PATH_LEN));
-        memset(buffer, '\0', (FILE_BUFFER_SIZE+PATH_LEN));
-
-        while((check=read(sck,buffer,(FILE_BUFFER_SIZE+PATH_LEN)))==-1){
-            if(errno=EINTR){
-                free(buffer);
-                string buffer = (string)malloc(sizeof(char)*(FILE_BUFFER_SIZE+PATH_LEN));
-                memset(buffer, '\0', (FILE_BUFFER_SIZE+PATH_LEN));
-            }else{
-                //errore insapettato nella read
-                fprintf(stderr, "Errore inaspettato nella lettura\n");
-                free(buffer);
-                for(int i=0; i<numFile; i++){
-                    free(dataArray[i]);
-                }
-                _exit(EXIT_FAILURE);
-
-            }
-        }
-        
-        if(check==0 && strlen(buffer)==0){
-            if(readSignal){
-                //è stato letto un segnale di terminazione e ora è stata chiusa la socket del Masterthread
-                for(int i=0; i<numFile; i++){
-                    if(i<index){
-                        puts(dataArray[i]);
-
-                    }
-                    //free(dataArray[i]);
-                }
-                _exit(EXIT_SUCCESS);
-            }else{
-                //è stata chiusa la Socket del masterthread significa che c'è stato un errore
-                free(buffer);
-                for(int i=0; i<numFile; i++){
-                    free(dataArray[i]);
-                }
-                _exit(EXIT_FAILURE);
-            }
-        }
-        if(strlen(buffer)>0){
-            //la lettura è avvenuta correttamente
-            if(strncmp(buffer, "stampa", strlen("stampa"))==0){
-                free(buffer);
-                if(writen(sck,"k",2)==-1){
-                    fprintf(stderr, "Impossibile raggiungere l'handler");
-                }
-                //è stato inviato sigusr1
-                string tmp[index];
-                if(index>0){
-                    for(int i=0; i<index;i++){
-                        tmp[i]=malloc(sizeof(char)*(1+strlen(dataArray[i])));
-                        strcpy(tmp[i],dataArray[i]);
-                    }
-                    stampaRisultati(tmp,index);
-                }
-                for(int i=0; i<index; i++){
-                    free(tmp[i]);
-                }
-                continue;
-            }
-            if(strncmp(buffer, "exit", strlen("exit"))==0){
-                free(buffer);
-                //è stato letto un segnale di terminazione
-                readSignal=true;
-                if(writen(sck,"k",2)==-1){
-                    fprintf(stderr, "Impossibile raggiungere l'handler");
-                }
-                continue;
-            }
-            //inserisco il risultato della lettura nel dataArray e rispondo 
-            strcpy(dataArray[index], buffer);
+        memset(buffer, '\0', PATH_LEN); 
+        if((check=read(sck, buffer, PATH_LEN))==0){
+            //la pipe è chiusa
+            fprintf(stdout, "pipe chiusa");
             free(buffer);
-            if(writen(sck,"OK",3)!=0){
-                fprintf(stderr, "impossibile comunicare al worker che ho ricevuto il segnale\n");
-                free(buffer);
-                for(int i=0; i<numFile; i++){
-                    free(dataArray[i]);
+            _exit(EXIT_SUCCESS);
+        }
+        fprintf(stdout, "Ho letto %d byte :%s\n", check,buffer);
+        if(strlen(buffer)==1){
+            if(strcmp(buffer,  "s")==0){
+                stampaRisultati(dataArray,index);
+            }else{
+                if(strcmp(buffer,"t")==0){
+                    stampaRisultati(dataArray,index);
+                    for(int i=0; i<index; i++){
+                        free(dataArray[index]);
+                    }
+                    free(buffer);
+                    _exit(EXIT_SUCCESS);
+                }else{
+                    fprintf(stderr, "Letto un valore inaspettato ERRORE\n");
+                    free(buffer);
+                    _exit(EXIT_FAILURE);
                 }
+            }
+        }else{
+            printf("COLLECTOR:Copio nel data array %s\n", buffer);
+            strcpy(dataArray[index],buffer);
+            index++;
+            if(writen(sck, "ok", 3) !=0){
+                fprintf(stderr,  "il collector non riesce a comunicare l'avvenuta ricezine del messaggio alla threadpool\n");
+                free(buffer);
                 _exit(EXIT_FAILURE);
             }
-            index++;
-            if(index==numFile){
-                puts("stampa");
-                stampaRisultati(dataArray,numFile);
-                for(int i=0; i<numFile; i++){
-                    free(dataArray[i]);
-                }
+            if(index>=numFile){
+                stampaRisultati(dataArray, index);
+                free(buffer);
                 _exit(EXIT_SUCCESS);
-            }else{
-                continue;
             }
         }
+
+        
+
     }
     //non ci arriva mai
+    free(buffer);
     _exit(EXIT_FAILURE);
    
 }//end Collector

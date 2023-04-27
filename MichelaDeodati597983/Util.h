@@ -42,7 +42,7 @@ typedef char* string;
 #endif
 
 #if !defined(PATH_LEN)
-#define PATH_LEN 255
+#define PATH_LEN 245
 #endif
 
 #define REMOVE_SOCKET()\

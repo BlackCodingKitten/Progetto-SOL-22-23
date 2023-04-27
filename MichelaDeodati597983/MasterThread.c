@@ -71,14 +71,11 @@ static void* sigHandlerTask (void*arg){
                 case SIGHUP:
                 case SIGTERM:                  
                     if(*(sArg.stop)==0){
+                        fprintf(stdout, "Stop=0\n");
                         if(pthread_mutex_lock(&(wpool->conn_lock))!=0){
                             fprintf(stderr, "impossibile acquisire la lock della connessione\n");
                             exit(EXIT_FAILURE);
                         }else{
-                            while(wpool->can_write==0){
-                                pthread_cond_wait(&(wpool->conn_cond), &(wpool->conn_lock));
-                            }
-                            wpool->can_write=0;
                             if(writen(wpool->fd_socket, "t", 2)<0){
                                 fprintf(stderr, "impossibile notificare al collector la terminazione\n");
                                 exit(EXIT_FAILURE);
@@ -87,11 +84,6 @@ static void* sigHandlerTask (void*arg){
                             char ok[3];
                             if(readn(wpool->fd_socket, ok, 3)<0){
                                 fprintf(stderr, "risposta dal collector non ricevuta\n");
-                                exit(EXIT_FAILURE);
-                            }
-                            wpool->can_write=1;
-                            if(pthread_cond_signal(&(wpool->conn_cond))!=0){
-                                fprintf(stderr, "Errore, impossibile svegliare nuovi thread\n");
                                 exit(EXIT_FAILURE);
                             }
                             wpool->exiting=true;
@@ -103,6 +95,8 @@ static void* sigHandlerTask (void*arg){
                             pthread_exit(NULL);
                         }
                     }else {
+                        fprintf(stdout, "Stop = 1\n");
+                        fflush(stdout);
                         pthread_exit(NULL);
                     }   
                 case SIGUSR1:
@@ -110,10 +104,6 @@ static void* sigHandlerTask (void*arg){
                         fprintf(stderr, "impossibile acquisire la lock della connessione\n");
                         exit(EXIT_FAILURE);
                     }else{
-                        while(wpool->can_write==0){
-                            pthread_cond_wait(&(wpool->conn_cond), &(wpool->conn_lock));
-                        }
-                        wpool->can_write=0;
                         if(writen(wpool->fd_socket, "s", 2)<0){
                             fprintf(stderr, "impossibile notificare al collector la terminazione\n");
                             exit(EXIT_FAILURE);
@@ -122,11 +112,6 @@ static void* sigHandlerTask (void*arg){
                         char ok[3];
                         if(readn(wpool->fd_socket, ok, 3)<0){
                             fprintf(stderr, "risposta dal collector non ricevuta\n");
-                            exit(EXIT_FAILURE);
-                        }
-                        wpool->can_write=1;
-                        if(pthread_cond_signal(&(wpool->conn_cond))!=0){
-                            fprintf(stderr, "Errore, impossibile svegliare nuovi thread\n");
                             exit(EXIT_FAILURE);
                         }
                         wpool->exiting=true;
@@ -233,6 +218,10 @@ int runMasterThread(int n, int q, int t, int numFilePassati, sigset_t mask, stri
             int index=0; //indice per scorrere files
             int collectorTerminato =0;
 
+            for(int i=0; i<numFilePassati; i++){
+                fprintf(stdout, "i file passati sono %s\n",files[i]);
+            }
+
             //itero fino a che stop!=1, fino a che non ho mandato tutti i file o se il Collector è terminato per un qualunque motivo inaspettato
             while(!(*stop) && ((collectorTerminato=waitpid(process_id,NULL,WNOHANG))!=process_id)){
                 //se non è stato passato alcun -t dorme 0
@@ -266,6 +255,7 @@ int runMasterThread(int n, int q, int t, int numFilePassati, sigset_t mask, stri
                 
                 if(check==0){
                     //incremento l'indice solo se riesco ad assegnare correttamente la task alla threadpool
+                    fprintf(stdout, "il file %s è stato inserito in coda \n",files[index]);
                     ++index;
                     if(index>=numFilePassati){
                         *stop=1;
@@ -288,7 +278,8 @@ int runMasterThread(int n, int q, int t, int numFilePassati, sigset_t mask, stri
                     }
                 }
             }
-           
+            fflush(stdout);
+            puts("Esco da Master thread");
             //il collector è terminato prima del masterthread, c'è un errore, libero le risorse e ritorno EXIT_FAILURE
             if(collectorTerminato==process_id){
                 destroyWorkerpool(wpool,false);
@@ -296,6 +287,7 @@ int runMasterThread(int n, int q, int t, int numFilePassati, sigset_t mask, stri
                 pthread_kill(sigHandler,SIGTERM);
                 pthread_join(sigHandler,NULL);
                 free(stop);
+                close(MasterSocket);
                 REMOVE_SOCKET();
                 return  EXIT_FAILURE;
             }else{
@@ -311,11 +303,13 @@ int runMasterThread(int n, int q, int t, int numFilePassati, sigset_t mask, stri
                     return EXIT_FAILURE;
                 }else{
                     //chiudo la MasterSocket e aspetto che termini il collector
+                    puts("Aspetto che termini il collector");
                     waitpid(process_id,NULL,0);
-                    
+                    *stop=1;
                     pthread_kill(sigHandler, SIGTERM);
                     pthread_join(sigHandler,NULL);
-                    free(stop);           
+                    free(stop);   
+                    close(MasterSocket);        
                     REMOVE_SOCKET();
                     return EXIT_SUCCESS;
                 }

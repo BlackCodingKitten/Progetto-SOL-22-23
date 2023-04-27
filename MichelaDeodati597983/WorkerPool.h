@@ -37,9 +37,7 @@ typedef struct workerthread_t{
 */
 typedef struct workerpool_t{                
     pthread_mutex_t conn_lock;              //mutext per la socket
-    pthread_cond_t  conn_cond;              //usata per notificare la liberazione della socket per la scrittura
     int fd_socket;                          //socket usata per comunicare col collector
-    bool can_write;                         //condizione usata per controllare l'accesso alla socket 
     pthread_mutex_t lock;                   //mutext nell'accesso al'oggetto
     pthread_cond_t  cond;                   //usata per notificare un worker
     workerthread_t*      workers;           //array di worker id
