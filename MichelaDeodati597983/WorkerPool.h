@@ -30,6 +30,18 @@ typedef struct workerthread_t{
     pthread_t wid;
 }workerthread_t;
 
+/**
+ * @struct workertask_t
+ * @brief task che devono eseguire i thread worker
+ * 
+ * @var funPtr: Puntetore alla funzione da eseguire
+ * @var arg: argomento della funzione 
+*/
+typedef struct wT {
+    void(*fun)(void*); //puntatore alla funzione da eseguire
+    void* arg;  //filepath che viene passata dal masterthread
+}workertask_t;
+
 
 /**
  * @struct workerpool
@@ -40,9 +52,9 @@ typedef struct workerpool_t{
     int fd_socket;                          //socket usata per comunicare col collector
     pthread_mutex_t lock;                   //mutext nell'accesso al'oggetto
     pthread_cond_t  cond;                   //usata per notificare un worker
-    workerthread_t*      workers;           //array di worker id
+    workerthread_t* workers;                //array di worker id
     int             numWorkers;             //size dell'array workers
-    string *          pendingQueue;                  //coda interna usata per le task
+    workertask_t*   pendingQueue;           //coda interna usata per le task
     int             queueSize;              //massima size della coda, se settata a -1 non ccetta task pendenti
     int             activeTask;             //numero di task che sono attualmente in esecuzione dai workers
     int             queueHead;              //testa della coda
@@ -51,10 +63,10 @@ typedef struct workerpool_t{
     bool            exiting;                //true segnala se viene iniziato il protocollo di uscita
 }workerpool_t;
 
-typedef struct wArg{
-    string path;                    //nome o path del file
+typedef struct {
+    char path[PATH_LEN];                    //nome o path del file
     workerpool_t*pool;              //threadpool, passata perchè contiene socket e condizione+mutex sulla socket
-}wArg;
+}leggieSomma_arg;
 
 //FUNZIONI DI GESTIONE DELLA THREADPOOL DI WORKER
 
@@ -88,7 +100,7 @@ bool destroyWorkerpool (workerpool_t* wpool, bool waitTask);
  * @param firs permette di capire se è la prima task inserita o nomake
  * @return int 0 se va tutto bene, 1 non ci sono thread liberi o la coda è piena,-1 fallisce la chimata, setta errno
  */
-int addTask (workerpool_t* wpool, string file);
+int addTask (workerpool_t* wpool, void * file);
 
 /**
  * @brief task del thread worker che fa i calcoli sul file

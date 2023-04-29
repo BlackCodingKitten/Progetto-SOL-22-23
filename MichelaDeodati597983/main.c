@@ -302,11 +302,13 @@ int main (int argc, string argv[]){
 
     //chiamo la funzione che fa partire la threadpool, fa la fork e invoca il collector e crea il thread signal handler
     int ext = runMasterThread(ntread,qsize,tdelay,numFile,mask, files);
+    
     //libero la memoria
     for(int i=0; i<numFile; i++){
         free(files[i]);
     }
     free(files);
+
     if(dir!=NULL){
         free(dir);
     }

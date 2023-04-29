@@ -71,7 +71,7 @@ static void* sigHandlerTask (void*arg){
                 case SIGHUP:
                 case SIGTERM:                  
                     if(*(sArg.stop)==0){
-                        fprintf(stdout, "Stop=0\n");
+                        //fprintf(stdout, "Stop=0\n");
                         if(pthread_mutex_lock(&(wpool->conn_lock))!=0){
                             fprintf(stderr, "impossibile acquisire la lock della connessione\n");
                             exit(EXIT_FAILURE);
@@ -92,11 +92,13 @@ static void* sigHandlerTask (void*arg){
                                 exit(EXIT_FAILURE);
                             }
                             *(sArg.stop)=1;
+                            
                             pthread_exit(NULL);
                         }
                     }else {
-                        fprintf(stdout, "Stop = 1\n");
-                        fflush(stdout);
+                        //fprintf(stdout, "Stop = 1\n");
+                       // fflush(stdout);
+                      
                         pthread_exit(NULL);
                     }   
                 case SIGUSR1:
@@ -217,51 +219,26 @@ int runMasterThread(int n, int q, int t, int numFilePassati, sigset_t mask, stri
 
             int index=0; //indice per scorrere files
             int collectorTerminato =0;
-
-            for(int i=0; i<numFilePassati; i++){
-                fprintf(stdout, "i file passati sono %s\n",files[i]);
-            }
+            leggieSomma_arg file_arg[numFilePassati];
 
             //itero fino a che stop!=1, fino a che non ho mandato tutti i file o se il Collector è terminato per un qualunque motivo inaspettato
             while(!(*stop) && ((collectorTerminato=waitpid(process_id,NULL,WNOHANG))!=process_id)){
-                //se non è stato passato alcun -t dorme 0
                 //creo setto gli argomenti da mettere in coda
+                //controllo se le task vanno inserite con delay 
+                t++;                
                 
-                if(t!=0){
-                    //devo aspettare tot secondi prima di poter aggiungere una task
-                    for(int time_delay=1; time_delay<=t; time_delay++){
-                        //dormo un secondo alla volta e mano a mano controllo che non siano stati passati segnali di stop
-                        sleep(1);
-                        if(*stop==1){
-                            destroyWorkerpool(wpool,false);
-                            pthread_kill(sigHandler,SIGTERM);
-                            pthread_join(sigHandler,NULL);
-                            free(stop);
-                            REMOVE_SOCKET();
-                            return  EXIT_SUCCESS;
-                        }
-                        if(((collectorTerminato=waitpid(process_id,NULL,WNOHANG))==process_id)){
-                            destroyWorkerpool(wpool,false);
-                            pthread_kill(sigHandler,SIGTERM);
-                            pthread_join(sigHandler,NULL);
-                            free(stop);
-                            REMOVE_SOCKET();
-                            return  EXIT_FAILURE;
-                        }
-
-                    }
-                }
-                int check = addTask(wpool, files[index]);
-                
+                memset(file_arg[index].path,'\0',PATH_LEN);
+                strcpy(file_arg[index].path,files[index]);
+                file_arg[index].pool=wpool;
+                //fprintf(stdout, "passo: %s\n",file_arg->path);
+                int check = addTask(wpool, (void*)&file_arg[index]);                
                 if(check==0){
                     //incremento l'indice solo se riesco ad assegnare correttamente la task alla threadpool
-                    fprintf(stdout, "il file %s è stato inserito in coda \n",files[index]);
                     ++index;
                     if(index>=numFilePassati){
                         *stop=1;
                         continue;
                     }
-                    
                     continue;
                 }else{
                     if(check==1){
@@ -274,12 +251,13 @@ int runMasterThread(int n, int q, int t, int numFilePassati, sigset_t mask, stri
                         destroyWorkerpool(wpool,false);
                         free(stop);                       
                         REMOVE_SOCKET();
+
                         return EXIT_FAILURE;
                     }
                 }
             }
-            fflush(stdout);
-            puts("Esco da Master thread");
+            //fflush(stdout);
+            //puts("Esco da Master thread");
             //il collector è terminato prima del masterthread, c'è un errore, libero le risorse e ritorno EXIT_FAILURE
             if(collectorTerminato==process_id){
                 destroyWorkerpool(wpool,false);
@@ -289,6 +267,7 @@ int runMasterThread(int n, int q, int t, int numFilePassati, sigset_t mask, stri
                 free(stop);
                 close(MasterSocket);
                 REMOVE_SOCKET();
+
                 return  EXIT_FAILURE;
             }else{
                 //se il while non è terminato perchè si è chiuso il collector deve essere terminato perchè  *stop==1
@@ -300,10 +279,11 @@ int runMasterThread(int n, int q, int t, int numFilePassati, sigset_t mask, stri
                     pthread_join(sigHandler,NULL);
                     free(stop);
                     REMOVE_SOCKET();
+
                     return EXIT_FAILURE;
                 }else{
                     //chiudo la MasterSocket e aspetto che termini il collector
-                    puts("Aspetto che termini il collector");
+                    //puts("Aspetto che termini il collector");
                     waitpid(process_id,NULL,0);
                     *stop=1;
                     pthread_kill(sigHandler, SIGTERM);
@@ -311,6 +291,7 @@ int runMasterThread(int n, int q, int t, int numFilePassati, sigset_t mask, stri
                     free(stop);   
                     close(MasterSocket);        
                     REMOVE_SOCKET();
+
                     return EXIT_SUCCESS;
                 }
             }//fine dell'else che controlla la terminazione del ciclo while
