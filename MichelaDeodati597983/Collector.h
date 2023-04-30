@@ -35,7 +35,7 @@
 int listenSocket;
 
 
-void runCollector(int numFile);
+void runCollector(int numFile, int * signal_flag);
 
 
 

@@ -68,7 +68,7 @@ void stampaRisultati (string * a, int dim){
     
 }
 
-void runCollector (int numFile){
+void runCollector (int numFile,int * signal_flag){
     //fprintf(stdout, "numero file passati %d\n", numFile);
     string dataArray[numFile];
     //inizializzo l'array di file da stampare
@@ -118,10 +118,27 @@ void runCollector (int numFile){
             close(sck);
             _exit(EXIT_SUCCESS);
         }
+
+        //controllo il valore di int * signal_flag 
+        if(* signal_flag==SEGNALE_DI_STAMPA){
+            //segnale di stampa
+            stampaRisultati(dataArray,index);
+            continue;
+        }
+        if(*signal_flag==SEGNALE_DI_TERMINAZIONE){
+            //segnale di terminazione
+            stampaRisultati(dataArray,index);
+            for(int i=0; i<index; i++){
+                free(dataArray[index]);
+            }
+            free(buffer);
+            close(sck);
+            _exit(EXIT_SUCCESS);
+        }
+        
         //resetto il buffer
         memset(buffer, '\0', PATH_LEN); 
         //controllo il vaore di ritorno della read per assicurarmi che la pipe non sia stata chiusa e che non ci siano errori
-
         if((check=read(sck, buffer, PATH_LEN))==0){
             //la pipe è chiusa
             fprintf(stdout, "pipe chiusa");
@@ -136,51 +153,9 @@ void runCollector (int numFile){
             close(sck);
             _exit(EXIT_FAILURE);
         }
-        //se la lunghezza del buffer è solo 1 carattere significa che ho ricevuto un segale 
-        if(strlen(buffer)==1){
-            //"s"=stmpa
-            if(strcmp(buffer,  "s")==0){
-                //ho ricevuot un segnale sigusr1, procedura di stampa, rispondo al sig handler stampo e continuo                                    
-                if(writen(sck,"ok", 3)<0){
-                    fprintf(stderr, "Il Collector non puo' comunicare con il signal handler,errore\n");
-                    _exit(EXIT_FAILURE);
-                }
-                stampaRisultati(dataArray,index);
-            }else{
-                if(strcmp(buffer,"t")==0){
-                    //ho ricevuto un segnale di terminazione
-                    if(writen(sck,"ok", 3)<0){
-                        fprintf(stderr, "Il Collector non puo' comunicare con il signal handler,errore\n");
-                        free(buffer);
-                        close(sck);
-                        _exit(EXIT_FAILURE);
-                    }
-                    //rispondo al collector, stampo ed esco
-                    stampaRisultati(dataArray,index);
-                    for(int i=0; i<index; i++){
-                        free(dataArray[index]);
-                    }
-                    free(buffer);
-                    close(sck);
-                    _exit(EXIT_SUCCESS);
-                }else{
-                    fprintf(stderr, "Letto un valore inaspettato ERRORE\n");
-                    for(int i=0; i<index; i++){
-                        free(dataArray[index]);
-                    }
-                    free(buffer);
-                    close(sck);
-                    _exit(EXIT_FAILURE);
-                }
-            }
-        }else{
-            //copio il valore appena letto nel dataarray
+        //se la lunghezza del buffer è maggiore di 1 carattere significa che ho ricevuto correttamente la stringa
+        if(strlen(buffer)>1){
             strcpy(dataArray[index],buffer);
-            // fprintf(stdout,"\nNel datarray ci sono:\n");
-            // for(int i=0; i<=index; i++){
-            //     printf("\t");
-            //     puts(dataArray[i]);
-            // }
             ++index;
             if(writen(sck, "ok", 3) !=0){
                 fprintf(stderr,  "il collector non riesce a comunicare l'avvenuta ricezine del messaggio alla threadpool\n");
@@ -191,10 +166,12 @@ void runCollector (int numFile){
                 close(sck);
                 _exit(EXIT_FAILURE);
             }
-
-        }
+        } 
     }
     //non ci arriva mai
+    for(int i=0; i<index; i++){
+        free(dataArray[index]);
+    }
     free(buffer);
     close(sck);
     _exit(EXIT_FAILURE);
