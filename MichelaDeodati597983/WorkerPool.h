@@ -1,6 +1,3 @@
-#ifndef _POSIX_C_SOURCE
-#define _POSIX_C_SOURCE 2001112L
-#endif
 /**
  * @file WorkerPool.h
  * @author Michela Deodati 597983
@@ -10,6 +7,11 @@
  * @copyright Copyright (c) 2023
  * 
  */
+
+#ifndef _POSIX_C_SOURCE
+#define _POSIX_C_SOURCE 2001112L
+#endif
+
 #ifndef WORKER_POOL_H_
 #define WORKER_POOL_H_
 
@@ -39,7 +41,7 @@ typedef struct workerthread_t{
 */
 typedef struct wT {
     void(*fun)(void*); //puntatore alla funzione da eseguire
-    void* arg;  //filepath che viene passata dal masterthread
+    void* arg;         //Argomento della funzione che viene puntata da fun
 }workertask_t;
 
 
@@ -63,8 +65,12 @@ typedef struct workerpool_t{
     bool            exiting;                //true segnala se viene iniziato il protocollo di uscita
 }workerpool_t;
 
+/**
+ * @brief struct che definisce cosa viene effettivamente passato alla funzione leggie somma castato a (void*)
+ * 
+ */
 typedef struct {
-    char path[PATH_LEN];                    //nome o path del file
+    char path[PATH_LEN];             //nome o path del file
     workerpool_t*pool;              //threadpool, passata perchè contiene socket e condizione+mutex sulla socket
 }leggieSomma_arg;
 

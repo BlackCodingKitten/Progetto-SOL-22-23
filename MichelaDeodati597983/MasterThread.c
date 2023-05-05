@@ -43,7 +43,7 @@
 typedef struct s{
     int * stop;                     //condizione di terminazione del while del masterthread;
     sigset_t*set;                   // set dei segnali da gestire mascherati
-    int * flag;
+    int * flag;                     //int * che viene passato anche al collector assume valori differenti a seconda del segnlae letto
 }sigHarg;
 
 /**
@@ -145,7 +145,6 @@ int runMasterThread(int n, int q, int t, int numFilePassati, sigset_t mask, stri
 
     }else{
         if(process_id==0){
-
             //sono nel processo figlio: avvio il processo collector, gli passo quanti file ci sono da stampare
             runCollector(numFilePassati, flag);
 
@@ -183,15 +182,15 @@ int runMasterThread(int n, int q, int t, int numFilePassati, sigset_t mask, stri
                 return EXIT_FAILURE;
             }
 
-            int index=0; //indice per scorrere files
+            int index = 0; //indice per scorrere files
             int collectorTerminato =0;
-            leggieSomma_arg file_arg[numFilePassati];
+            leggieSomma_arg file_arg[numFilePassati]; //arrey degli argomenti da passare
 
             //itero fino a che stop!=1, fino a che non ho mandato tutti i file o se il Collector è terminato per un qualunque motivo inaspettato
             while(!(*stop) && ((collectorTerminato=waitpid(process_id,NULL,WNOHANG))!=process_id)){
                 for(int i=0; i<t; i++){
                     sleep(1);
-                    if(*flag ==SEGNALE_DI_TERMINAZIONE){
+                    if(*flag == SEGNALE_DI_TERMINAZIONE || (collectorTerminato=waitpid(process_id,NULL,WNOHANG))==process_id){
                         t=-1;
                     }
                 }

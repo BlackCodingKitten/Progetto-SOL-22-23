@@ -196,6 +196,9 @@ void findFileDir(const string dirName, string* saveFile, int index)
 }
 
 int main (int argc, string argv[]){
+    //esegue il controllo del numero di argomenti passati al main in maniera quantitativa
+    InputCheck(argc, argv);
+
     //ignoro il segnale sigpipe per evitare di essere terminato da una scrittura su socket
     struct sigaction s;
     memset(&s,0,sizeof(s));
@@ -226,8 +229,7 @@ int main (int argc, string argv[]){
         fprintf(stderr, "fatal error pthread_sigmask\n");
         return EXIT_FAILURE;
     }
-    //esegue il controllo del numero di argomenti passati al main in maniera quantitativa
-    InputCheck(argc, argv);
+
     //fileindex contiene la posizione dei file passati al main
     int fileIndex=1;
     int opt=0;
@@ -236,6 +238,7 @@ int main (int argc, string argv[]){
     int ntread=NTHREAD_DEFAULT;
     int qsize=QUEUE_SIZE_DEFAULT;
     int tdelay=DELAY_DEFAULT;
+
     //alloco dir solo se ne ho bisogno, cioè se viene passata l'opzione -d 
     string dir = NULL;
 
@@ -271,7 +274,7 @@ int main (int argc, string argv[]){
     }//end while optarg
 
     //array di stringhe che salva il risultato dell'esplorazione della cartella
-    string * files=(string*)malloc(sizeof(string)*100);//allco 100 posti tanto poi faccio la realloc
+    string * files=(string*)malloc(sizeof(string)*100);
     for(int s=0; s<100; s++){
         files[s]=NULL;
     }
@@ -312,7 +315,6 @@ int main (int argc, string argv[]){
     if(dir!=NULL){
         free(dir);
     }
-    //esco
-    //printf("ritorno %d\n", ext);
+    //esco con codice il valore di ritorno da runMasterthread
     return ext;
 }

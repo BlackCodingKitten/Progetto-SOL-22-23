@@ -1,6 +1,3 @@
-#ifndef _POSIX_C_SOURCE
-#define _POSIX_C_SOURCE 2001112L
-#endif
 /**
  * @file Collector.h
  * @author Michela Deodati 597983
@@ -9,6 +6,13 @@
  * @date 15-03-22
  * 
  */
+
+#ifndef _POSIX_C_SOURCE
+#define _POSIX_C_SOURCE 2001112L
+#endif
+
+#ifndef COLLECTOR_H_
+#define COLLECTOR_H_
 
 #include <unistd.h>
 #include <ctype.h>
@@ -29,13 +33,15 @@
 #include "./Util.h"
 
 /**
- * @brief socket su cui il Collector si mette in ascolto
+ * @brief implementa tutte le funzionalità del collector, apre una socket  e si connette al server (Masterthread), legge i risultati calcolati dai worker, e stampa ordinatamente i file 
  * 
+ * @param numFile numero di file che vengono passati 
+ * @param signal_flag gesttita dal signal handler, assume 2 valori che indicano segnale di stampa, o di terminazione 
+ * 
+ * @return esce con codice  :EXIT_SUCCESS se va tutto bene, EXIT_FAILURE se ci sono stati degli errori
  */
-int listenSocket;
-
-
 void runCollector(int numFile, int * signal_flag);
 
 
 
+#endif  /*COLLECTOR_H_*/

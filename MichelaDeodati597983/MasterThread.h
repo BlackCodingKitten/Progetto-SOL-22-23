@@ -1,6 +1,17 @@
-#ifndef _POSIX_C_SOURCE
-#define _POSIX_C_SOURCE 2001112L
-#endif
+/**
+ * @file MasterThread.h
+ * @author MICHELA DEODATI 597983
+ * @brief 
+ * @version 0.1
+ * @date 2023-05-05
+ * 
+ * @copyright Copyright (c) 2023
+ * 
+ */
+
+#ifndef MASTERTHREAD_H_
+#define MASTERTHREAD_H_
+
 #include <pthread.h>
 #include <unistd.h>
 #include <stdio.h>
@@ -28,3 +39,5 @@
  * @param argarray array di stringhe dei file passati
  */
 int runMasterThread(int n, int q, int t, int numFilePassati,sigset_t mask, string * files);
+
+#endif /*MASTYRTHREAD_H_*/

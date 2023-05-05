@@ -69,7 +69,7 @@ void stampaRisultati (string * a, int dim){
 }
 
 void runCollector (int numFile,int * signal_flag){
-    //fprintf(stdout, "numero file passati %d\n", numFile);
+    
     string dataArray[numFile];
     //inizializzo l'array di file da stampare
     for(int i=0; i<numFile; i++){
@@ -105,8 +105,8 @@ void runCollector (int numFile,int * signal_flag){
     }
    
     int index=0;//tiene traccia di quanti file sono stati scritti nel dataArray
-    int check =0;
-    string buffer = (string)malloc(sizeof(char)*PATH_LEN);
+    int check =0;//avlore di ritorno della read
+    string buffer = (string)malloc(sizeof(char)*PATH_LEN); //buffer di scritturea e lettura
     while(true){
         //controllo che index sia minore di numfile, altrimenti ho finito di lavorare, stampo ed esco
         if(index == numFile || index>numFile){
@@ -153,10 +153,11 @@ void runCollector (int numFile,int * signal_flag){
             close(sck);
             _exit(EXIT_FAILURE);
         }
-        //se la lunghezza del buffer è maggiore di 1 carattere significa che ho ricevuto correttamente la stringa
-        if(strlen(buffer)>1){
+        //se la lunghezza del buffer è maggiore di 0 caratteri significa che ho ricevuto correttamente la stringa
+        if(strlen(buffer)>0){
             strcpy(dataArray[index],buffer);
             ++index;
+            //rispondo al worker che ha inviato il file per comunicargli la corretta lettura, se fallisce esco
             if(writen(sck, "ok", 3) !=0){
                 fprintf(stderr,  "il collector non riesce a comunicare l'avvenuta ricezine del messaggio alla threadpool\n");
                 for(int i=0; i<index; i++){
@@ -168,6 +169,7 @@ void runCollector (int numFile,int * signal_flag){
             }
         } 
     }
+    fprintf(stderr, "Unkwno Error\n");
     //non ci arriva mai
     for(int i=0; i<index; i++){
         free(dataArray[index]);
