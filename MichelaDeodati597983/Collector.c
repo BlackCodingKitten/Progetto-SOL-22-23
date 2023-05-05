@@ -68,7 +68,7 @@ void stampaRisultati (string * a, int dim){
     
 }
 
-void runCollector (int numFile,int * signal_flag){
+void runCollector (int numFile){
     
     string dataArray[numFile];
     //inizializzo l'array di file da stampare
@@ -107,51 +107,62 @@ void runCollector (int numFile,int * signal_flag){
     int index=0;//tiene traccia di quanti file sono stati scritti nel dataArray
     int check =0;//avlore di ritorno della read
     string buffer = (string)malloc(sizeof(char)*PATH_LEN); //buffer di scritturea e lettura
+
     while(true){
         //controllo che index sia minore di numfile, altrimenti ho finito di lavorare, stampo ed esco
         if(index == numFile || index>numFile){
             stampaRisultati(dataArray, numFile);
             for (int i=0; i<numFile; i++){
-                free(dataArray[i]);
+                if(dataArray[i]!=NULL){
+                    free(dataArray[i]);
+                }
             }
-            free(buffer);
+            if(buffer!=NULL){
+                free(buffer);
+            }
             close(sck);
             _exit(EXIT_SUCCESS);
         }
-
-        //controllo il valore di int * signal_flag 
-        if(* signal_flag==SEGNALE_DI_STAMPA){
-            //segnale di stampa
-            stampaRisultati(dataArray,index);
-            continue;
-        }
-        if(*signal_flag==SEGNALE_DI_TERMINAZIONE){
-            //segnale di terminazione
-            stampaRisultati(dataArray,index);
-            for(int i=0; i<index; i++){
-                free(dataArray[index]);
-            }
-            free(buffer);
-            close(sck);
-            _exit(EXIT_SUCCESS);
-        }
-        
         //resetto il buffer
         memset(buffer, '\0', PATH_LEN); 
         //controllo il vaore di ritorno della read per assicurarmi che la pipe non sia stata chiusa e che non ci siano errori
         if((check=read(sck, buffer, PATH_LEN))==0){
             //la pipe è chiusa
             fprintf(stdout, "pipe chiusa");
-            free(buffer);
+            for (int i=0; i<numFile; i++){
+                if(dataArray[i]!=NULL){
+                    free(dataArray[i]);
+                }
+            }
+            if(buffer!=NULL){
+                free(buffer);
+            }
             close(sck);
             _exit(EXIT_SUCCESS);
         }
         //read ritona un valore negativo errore 
         if(check<0){
-            fprintf(stderr, "Erore nella lettura sulla socket\n");
-            free(buffer);
-            close(sck);
             _exit(EXIT_FAILURE);
+        }
+        //controllo il valore di int * signal_flag 
+        if(strlen(buffer)==STAMPA){
+            //segnale di stampa
+            stampaRisultati(dataArray,index);
+            continue;
+        }
+        if(strlen(buffer)==TERMINA){
+            //segnale di terminazione
+            stampaRisultati(dataArray,index);
+            for (int i=0; i<numFile; i++){
+                if(dataArray[i]!=NULL){
+                    free(dataArray[i]);
+                }
+            }
+            if(buffer!=NULL){
+                free(buffer);
+            }
+            close(sck);
+            _exit(EXIT_SUCCESS);
         }
         //se la lunghezza del buffer è maggiore di 0 caratteri significa che ho ricevuto correttamente la stringa
         if(strlen(buffer)>0){
@@ -160,21 +171,29 @@ void runCollector (int numFile,int * signal_flag){
             //rispondo al worker che ha inviato il file per comunicargli la corretta lettura, se fallisce esco
             if(writen(sck, "ok", 3) !=0){
                 fprintf(stderr,  "il collector non riesce a comunicare l'avvenuta ricezine del messaggio alla threadpool\n");
-                for(int i=0; i<index; i++){
-                    free(dataArray[index]);
+                for (int i=0; i<numFile; i++){
+                    if(dataArray[i]!=NULL){
+                        free(dataArray[i]);
+                    }
                 }
-                free(buffer);
+                if(buffer!=NULL){
+                    free(buffer);
+                }
                 close(sck);
                 _exit(EXIT_FAILURE);
             }
         } 
     }
-    fprintf(stderr, "Unkwno Error\n");
+    fprintf(stderr, "Unkwnon Error\n");
     //non ci arriva mai
-    for(int i=0; i<index; i++){
-        free(dataArray[index]);
+    for (int i=0; i<numFile; i++){
+        if(dataArray[i]!=NULL){
+            free(dataArray[i]);
+        }
     }
-    free(buffer);
+    if(buffer!=NULL){
+        free(buffer);
+    }
     close(sck);
     _exit(EXIT_FAILURE);
    

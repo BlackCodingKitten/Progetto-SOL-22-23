@@ -28,6 +28,7 @@
 
 
 #include "./Util.h"
+
 /**
  * @brief è la funzione che gestisce la threadpool, lacia il signal handler, 
  * e si forka nel processso collector, sostanzialmente il core del progetto

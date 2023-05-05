@@ -34,7 +34,7 @@
 #include <Collector.h>
 #include <WorkerPool.h>
 #include "./MasterThread.h"
-
+int flag=0;
 
 
 /**
@@ -43,7 +43,7 @@
 typedef struct s{
     int * stop;                     //condizione di terminazione del while del masterthread;
     sigset_t*set;                   // set dei segnali da gestire mascherati
-    int * flag;                     //int * che viene passato anche al collector assume valori differenti a seconda del segnlae letto
+    workerpool_t * wpool;           //puntatore alla threadpool
 }sigHarg;
 
 /**
@@ -55,10 +55,7 @@ typedef struct s{
  * @return void* 
  */
 static void* sigHandlerTask (void*arg){
-    //casto l'argomento 
-    sigHarg signal_arg =(*(sigHarg*)arg);
-
-   
+  
     int sig;
     while (true){
         //controllo che sigwait non ritorni un errore
@@ -73,18 +70,42 @@ static void* sigHandlerTask (void*arg){
                 case SIGHUP:
                 case SIGTERM: 
                     //per prima cosa controllo il valore di stop per sapere se è una terminazione trasmite seganle oppure terminazione per un errore
-                    if(*(signal_arg.stop)==1){
+                    if(*((*(sigHarg*)arg).stop)==1){
                         //è terminato prima il masterthread, quindi non sto ricevendo un segnale
                         pthread_exit(NULL);
                     }else{
+                        if(pthread_mutex_lock(&((*((sigHarg*)arg)).wpool->conn_lock))!=0){
+                            fprintf(stderr,"Errore Lock\n");
+                            pthread_mutex_unlock(&((*((sigHarg*)arg)).wpool->conn_lock));
+                            pthread_exit(NULL);
+                        }else{
+                            if(writen((*((sigHarg*)arg)).wpool->fd_socket, "t", 2)!=0 ){
+                                perror("write()");
+                                pthread_mutex_unlock(&((*((sigHarg*)arg)).wpool->conn_lock));
+                                pthread_exit(NULL);
+                            }
+                        }
                         //il valore di stop==0 -> devo termianre per la ricezione di un segnale
-                        *(signal_arg.flag) = SEGNALE_DI_TERMINAZIONE; //valore di terminazione
-                        *(signal_arg.stop) = 1;
+                        SEGNALE_DI_TERMINAZIONE(); //valore di terminazione
+                        *((*(sigHarg*)arg).stop) = 1;
+                        pthread_mutex_unlock(&((*((sigHarg*)arg)).wpool->conn_lock));
                         pthread_exit(NULL);
                     }               
                 case SIGUSR1:
-                    *signal_arg.flag = SEGNALE_DI_STAMPA; //valore di STAMPA
-                    break;
+                        if(pthread_mutex_lock(&((*((sigHarg*)arg)).wpool->conn_lock))!=0){
+                            fprintf(stderr,"Errore Lock\n");
+                            pthread_mutex_unlock(&((*((sigHarg*)arg)).wpool->conn_lock));
+                            pthread_exit(NULL);
+                        }else{
+                            if(writen((*((sigHarg*)arg)).wpool->fd_socket, "st", 3)!=0 ){
+                                perror("write()");
+                                pthread_mutex_unlock(&((*((sigHarg*)arg)).wpool->conn_lock));
+                                pthread_exit(NULL);
+                            }
+                        }
+                        pthread_mutex_unlock(&((*((sigHarg*)arg)).wpool->conn_lock));
+                        SEGNALE_DI_STAMPA(); //valore di STAMPA
+                        break;
             }//end switch
         }//end else sigwait
         
@@ -128,10 +149,6 @@ int runMasterThread(int n, int q, int t, int numFilePassati, sigset_t mask, stri
     //creo la condizione del while per terminare in caso di ricezione dei segnali SIGHUP,SIGINT,SIGTERM
     int* stop=(int*)malloc(sizeof(int));
     *stop = 0;
-
-    //flag è in valore che modifica solamente il signal handler se vale 1 è statao mandato un segnale di terminazione se vale 2 è stato mandato un segnale di stam
-    int*flag=(int*)malloc(sizeof(int));
-    *flag = 0;
    
     //Eseguo la fork, il processo padre  continuerà ad essere il MasterThread,  mentre il processo figlio invocherà la funzione che gestisce il collector
     pid_t process_id=fork();
@@ -140,13 +157,12 @@ int runMasterThread(int n, int q, int t, int numFilePassati, sigset_t mask, stri
         //id <0 la fork ha dato errore
         fprintf(stderr, "MASTERTHREAD: Errore la fork ha ritornato un id negativo process_id=%d\n", process_id);
         free(stop);
-        free(flag);
         return EXIT_FAILURE;
 
     }else{
         if(process_id==0){
             //sono nel processo figlio: avvio il processo collector, gli passo quanti file ci sono da stampare
-            runCollector(numFilePassati, flag);
+            runCollector(numFilePassati);
 
         }else{
             //accetto la connessione col collector controllando che avvenga in maiera corretta
@@ -155,7 +171,7 @@ int runMasterThread(int n, int q, int t, int numFilePassati, sigset_t mask, stri
                 fprintf(stderr,  "Errore accept() collector Socket\n");
                 REMOVE_SOCKET();
                 free(stop);
-                free(flag);
+                
                 return EXIT_FAILURE;
             }
             //creo la threadpool con la funzione createWorkerpool e controllo che la creazione della threadpool si concluda con successo
@@ -164,12 +180,12 @@ int runMasterThread(int n, int q, int t, int numFilePassati, sigset_t mask, stri
                 fprintf(stderr, "MASTERTHREAD: Errore fatale nella creazione della workerpool\n");
                 free(stop);
                 REMOVE_SOCKET();
-                free(flag);
+                
                 return EXIT_FAILURE;
             }
 
             //setto gli argomenti da passare al thread signal handler
-            sigHarg argSH ={stop, &mask, flag};
+            sigHarg argSH ={stop, &mask,wpool};
            
             //creo il thread signal handler e gli passo gli argomenti appena settati
             pthread_t sigHandler;
@@ -178,7 +194,7 @@ int runMasterThread(int n, int q, int t, int numFilePassati, sigset_t mask, stri
                 destroyWorkerpool(wpool,false);
                 REMOVE_SOCKET();
                 free(stop);
-                free(flag);
+                
                 return EXIT_FAILURE;
             }
 
@@ -190,7 +206,7 @@ int runMasterThread(int n, int q, int t, int numFilePassati, sigset_t mask, stri
             while(!(*stop) && ((collectorTerminato=waitpid(process_id,NULL,WNOHANG))!=process_id)){
                 for(int i=0; i<t; i++){
                     sleep(1);
-                    if(*flag == SEGNALE_DI_TERMINAZIONE || (collectorTerminato=waitpid(process_id,NULL,WNOHANG))==process_id){
+                    if(flag == TERMINA || (collectorTerminato=waitpid(process_id,NULL,WNOHANG))==process_id){
                         t=-1;
                     }
                 }
@@ -222,8 +238,7 @@ int runMasterThread(int n, int q, int t, int numFilePassati, sigset_t mask, stri
                         pthread_kill(sigHandler,SIGTERM);
                         pthread_join(sigHandler,NULL);
                         destroyWorkerpool(wpool,false);
-                        free(stop);  
-                        free(flag);                     
+                        free(stop);                       
                         REMOVE_SOCKET();
 
                         return EXIT_FAILURE;
@@ -238,10 +253,8 @@ int runMasterThread(int n, int q, int t, int numFilePassati, sigset_t mask, stri
                 pthread_kill(sigHandler,SIGTERM);
                 pthread_join(sigHandler,NULL);
                 free(stop);
-                free(flag);
                 close(MasterSocket);
                 REMOVE_SOCKET();
-
                 return  EXIT_FAILURE;
             }else{
                 //se il while non è terminato perchè si è chiuso il collector deve essere terminato perchè  *stop==1
@@ -251,7 +264,7 @@ int runMasterThread(int n, int q, int t, int numFilePassati, sigset_t mask, stri
                     *(stop)=1;
                     pthread_kill(sigHandler, SIGTERM);
                     pthread_join(sigHandler,NULL);
-                    free(flag);
+                    
                     free(stop);
                     REMOVE_SOCKET();
 
@@ -264,7 +277,7 @@ int runMasterThread(int n, int q, int t, int numFilePassati, sigset_t mask, stri
                     pthread_kill(sigHandler, SIGTERM);
                     pthread_join(sigHandler,NULL);
                     free(stop);
-                    free(flag);   
+                       
                     close(MasterSocket);        
                     REMOVE_SOCKET();
 

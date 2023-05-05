@@ -32,14 +32,6 @@ typedef char* string;
 #define FILE_BUFFER_SIZE 20
 #endif
 
-#if !defined(SEGNALE_DI_TERMINAZIONE)
-#define SEGNALE_DI_TERMINAZIONE 1
-#endif
-
-#if !defined(SEGNALE_DI_STAMPA)
-#define SEGNALE_DI_STAMPA 2
-#endif
-
 #if !defined(SOCKET_NAME)
 //definisco il nome ella socket usata per la comunicazione tra collector e workers
 #define SOCKET_NAME "./farm.sck"
@@ -52,6 +44,19 @@ typedef char* string;
 #if !defined(PATH_LEN)
 #define PATH_LEN 245
 #endif
+
+#ifndef STAMPA
+#define STAMPA 2
+#define TERMINA 1
+#endif
+
+#define SEGNALE_DI_TERMINAZIONE()\
+   flag=1;\
+
+#define SEGNALE_DI_STAMPA()\
+    flag=2;\
+
+    
 
 #define REMOVE_SOCKET()\
    if(unlink(SOCKET_NAME)==0){\

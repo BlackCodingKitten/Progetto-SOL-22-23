@@ -27,6 +27,7 @@
 #include "./Collector.h"
 #include "./MasterThread.h"
 
+
 #define NTHREAD_DEFAULT 4
 #define QUEUE_SIZE_DEFAULT 8
 #define DELAY_DEFAULT 0

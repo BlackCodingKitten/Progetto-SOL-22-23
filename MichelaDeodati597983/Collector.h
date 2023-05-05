@@ -31,17 +31,13 @@
 #include <signal.h>
 
 #include "./Util.h"
-
 /**
  * @brief implementa tutte le funzionalità del collector, apre una socket  e si connette al server (Masterthread), legge i risultati calcolati dai worker, e stampa ordinatamente i file 
  * 
  * @param numFile numero di file che vengono passati 
- * @param signal_flag gesttita dal signal handler, assume 2 valori che indicano segnale di stampa, o di terminazione 
  * 
  * @return esce con codice  :EXIT_SUCCESS se va tutto bene, EXIT_FAILURE se ci sono stati degli errori
  */
-void runCollector(int numFile, int * signal_flag);
-
-
+void runCollector(int numFile);
 
 #endif  /*COLLECTOR_H_*/
