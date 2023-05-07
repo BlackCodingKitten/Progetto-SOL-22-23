@@ -85,10 +85,25 @@ static void* sigHandlerTask (void*arg){
                                 pthread_exit(NULL);
                             }
                         }
+                        if(pthread_mutex_unlock(&((*((sigHarg*)arg)).wpool->conn_lock))!=0){
+                            fprintf(stderr, "Errore signal handler\n");
+                            exit(EXIT_FAILURE);
+                        }
+                        
                         //il valore di stop==0 -> devo termianre per la ricezione di un segnale
                         SEGNALE_DI_TERMINAZIONE(); //valore di terminazione
                         *((*(sigHarg*)arg).stop) = 1;
-                        pthread_mutex_unlock(&((*((sigHarg*)arg)).wpool->conn_lock));
+                        if(pthread_mutex_lock(&((*((sigHarg*)arg)).wpool->lock))!=0){
+                            fprintf(stderr,"Errore lock threadpool\n");
+                            pthread_mutex_unlock(&((*((sigHarg*)arg)).wpool->lock));
+
+                        }else {
+                            (*((sigHarg*)arg)).wpool->exiting=true;
+                            if( pthread_mutex_unlock(&((*((sigHarg*)arg)).wpool->lock))!=0){
+                                fprintf(stderr, "Errore unlock threadpool\n");
+                                exit(EXIT_FAILURE);
+                            }
+                        }
                         pthread_exit(NULL);
                     }               
                 case SIGUSR1:
